@@ -1,5 +1,5 @@
 import type { UpiNotification } from "upi-listener";
-import { extractAmounts } from "./amount";
+import { extractAmounts, toPaise } from "./amount";
 import type { ParseConfidence, ParsedPayment } from "./types";
 
 interface AppPattern {
@@ -98,6 +98,71 @@ const GENERIC_INCOMING: AppPattern = {
 // worse than staying silent.
 const YOU_HAVE_SENT_RE = /\byou(?:'ve|\s+have)\s+sent\s+(?:₹|Rs\.?|INR)/i;
 
+// Amounts preceded (within a short window) by balance language belong to
+// the account balance, not the payment — e.g. "Balance ₹12,000. Received
+// ₹500 from Aman" must announce ₹500, not ₹12,000.
+const BALANCE_CONTEXT_RE = /balance|avail|closing|total\s+due/i;
+const BALANCE_WINDOW = 15;
+
+function nonBalanceAmounts(text: string): { raw: string; paise: number }[] {
+  return extractAmounts(text).filter(
+    ({ index }) =>
+      !BALANCE_CONTEXT_RE.test(
+        text.slice(Math.max(0, index - BALANCE_WINDOW), index),
+      ),
+  );
+}
+
+// Fallback for notifications that state the amount without a currency
+// symbol ("Received 500 from Aman"). Fires only when (a) no symbol-amount
+// exists, (b) an explicit incoming phrase is present, and (c) no outgoing
+// signal is present. Always medium confidence — a wrong guess here still
+// beats silence, but it must never outrank a symbol-amount parse.
+const BARE_INCOMING_RE =
+  /(?:money|payment|amount)\s+received|received\s+\d|credited\s+\d|(?:sent|paid|transferred)\s+\d+(?:\.\d{1,2})?\s+to\s+you\b|(?:has|have)\s+sent\s+\d|प्राप्त|जमा|क्रेडिट/i;
+const BARE_OUTGOING_RE =
+  /(?:you(?:'ve|\s+have)\s+sent\s+\d|paid\s+\d+\s+to\s+(?!you\b|your\b)|(?:sent|debited|transferred)\s+\d+(?!\s+to\s+you\b)(?!\s+to\s+your\b)|payment\s+(?:of\s+\d+\s+)?(?:successful|completed|done)\s+to\s+(?!you\b|your\b))/i;
+const DATE_LIKE_RE = /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/g;
+const BARE_AMOUNT_RE = /(?<![\d₹\w,.])(\d{1,9}(?:\.\d{1,2})?)(?![\d])/g;
+
+function bareSender(combined: string): string | null {
+  const patterns = [
+    /received\s+\d+(?:\.\d{1,2})?\s+from\s+([A-Za-z0-9 .'\-&()]{1,60})/i,
+    /credited\s+(?:with\s+)?\d+(?:\.\d{1,2})?\s+(?:from|by)\s+([A-Za-z0-9 .'\-&()]{1,60})/i,
+    /(.{1,40}?)\s+sent\s+\d+(?:\.\d{1,2})?\s+to\s+you\b/i,
+  ];
+  for (const re of patterns) {
+    const match = re.exec(combined);
+    const sender = cleanSender(match?.[1]);
+    if (sender) return sender;
+  }
+  return null;
+}
+
+type BareResult =
+  | { kind: "outgoing" }
+  | { kind: "parsed"; paise: number; sender: string | null }
+  | { kind: "none" };
+
+function tryBareAmount(combined: string): BareResult {
+  if (BARE_OUTGOING_RE.test(combined)) {
+    return { kind: "outgoing" };
+  }
+  if (!BARE_INCOMING_RE.test(combined)) {
+    return { kind: "none" };
+  }
+  const deDated = combined.replace(DATE_LIKE_RE, " ");
+  BARE_AMOUNT_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = BARE_AMOUNT_RE.exec(deDated)) !== null) {
+    const paise = toPaise(match[1]);
+    if (paise !== null) {
+      return { kind: "parsed", paise, sender: bareSender(combined) };
+    }
+  }
+  return { kind: "none" };
+}
+
 function appParser(packageName: string, appName: string): AppParser {
   return {
     packageName,
@@ -167,7 +232,7 @@ export function parseUpiNotification(event: UpiNotification): ParseOutcome {
     if (pattern.direction === "outgoing") {
       return { kind: "outgoing" };
     }
-    const amounts = extractAmounts(combined);
+    const amounts = nonBalanceAmounts(combined);
     if (amounts.length === 0) {
       continue;
     }
@@ -199,12 +264,30 @@ export function parseUpiNotification(event: UpiNotification): ParseOutcome {
     };
   }
 
-  const amounts = extractAmounts(combined);
+  const amounts = nonBalanceAmounts(combined);
   if (amounts.length > 0) {
     return {
       kind: "none",
       reason: "amount-without-payment-context",
       attempted,
+    };
+  }
+  const bare = tryBareAmount(combined);
+  if (bare.kind === "outgoing") {
+    return { kind: "outgoing" };
+  }
+  if (bare.kind === "parsed") {
+    return {
+      kind: "parsed",
+      payment: {
+        amountPaise: bare.paise,
+        sender: bare.sender,
+        sourcePackage: event.packageName,
+        appName: parser.appName,
+        confidence: "medium",
+        patternId: "bare-amount-fallback",
+        postedAt: event.postedAt,
+      },
     };
   }
   return { kind: "none", reason: "no-amount-found", attempted };

@@ -47,6 +47,28 @@ object UpiAnnounceGate {
   )
   private val senderCutRe =
     Regex("""\s+(?:on|via|through|using|to|at|from)\s+""", RegexOption.IGNORE_CASE)
+  // Amounts preceded (within a short window) by balance language belong to
+  // the account balance, not the payment — e.g. "Balance ₹12,000. Received
+  // ₹500 from Aman" must announce ₹500, not ₹12,000.
+  private val balanceContextRe =
+    Regex("""balance|avail|closing|total\s+due""", RegexOption.IGNORE_CASE)
+  private const val BALANCE_WINDOW = 15
+  // Fallback for notifications without a currency symbol ("Received 500
+  // from Aman"). Fires only when no symbol-amount exists: an explicit
+  // incoming phrase must be present and no outgoing signal. Always
+  // lower-trust than a symbol-amount parse.
+  private val bareIncomingRe =
+    Regex("""(?:money|payment|amount)\s+received|received\s+\d|credited\s+\d|(?:sent|paid|transferred)\s+\d+(?:\.\d{1,2})?\s+to\s+you\b|(?:has|have)\s+sent\s+\d|प्राप्त|जमा|क्रेडिट""", RegexOption.IGNORE_CASE)
+  private val bareOutgoingRe =
+    Regex("""(?:you(?:'ve|\s+have)\s+sent\s+\d|paid\s+\d+\s+to\s+(?!you\b|your\b)|(?:sent|debited|transferred)\s+\d+(?!\s+to\s+you\b)(?!\s+to\s+your\b)|payment\s+(?:of\s+\d+\s+)?(?:successful|completed|done)\s+to\s+(?!you\b|your\b))""", RegexOption.IGNORE_CASE)
+  private val dateLikeRe = Regex("""\d{1,2}[-/]\d{1,2}[-/]\d{2,4}""")
+  private val bareAmountRe = Regex("""(?<![\d₹\w,.])(\d{1,9}(?:\.\d{1,2})?)(?![\d])""")
+  private val bareReceivedFromRe =
+    Regex("""received\s+\d+(?:\.\d{1,2})?\s+from\s+([A-Za-z0-9 .'\-&()]{1,60})""", RegexOption.IGNORE_CASE)
+  private val bareCreditedRe =
+    Regex("""credited\s+(?:with\s+)?\d+(?:\.\d{1,2})?\s+(?:from|by)\s+([A-Za-z0-9 .'\-&()]{1,60})""", RegexOption.IGNORE_CASE)
+  private val bareSentToYouRe =
+    Regex("""(.{1,40}?)\s+sent\s+\d+(?:\.\d{1,2})?\s+to\s+you\b""", RegexOption.IGNORE_CASE)
 
   data class Decision(
     val speak: Boolean,
@@ -95,23 +117,40 @@ object UpiAnnounceGate {
       return Decision(false, null, "outgoing")
     }
 
-    val paise = firstAmountPaise(combined) ?: return Decision(false, null, "no-amount")
+    var paise = firstAmountPaise(combined)
+    var bareSender: String? = null
+    var bareFallback = false
+    if (paise == null) {
+      if (bareOutgoingRe.containsMatchIn(combined)) {
+        return Decision(false, null, "outgoing")
+      }
+      val bare = firstBareAmount(combined)
+      if (bare != null && bareIncomingRe.containsMatchIn(combined)) {
+        paise = bare.first
+        bareSender = bare.second
+        bareFallback = true
+      } else {
+        return Decision(false, null, "no-amount")
+      }
+    }
+    val resolvedPaise = paise ?: return Decision(false, null, "no-amount")
     val receivedMatch = receivedFromRe.find(combined)
     val creditedMatch = if (receivedMatch == null) creditedRe.find(combined) else null
     val sender = cleanSender((receivedMatch ?: creditedMatch)?.groupValues?.get(1))
       ?: if (hasSent) senderFromHasSent(combined) else null
       ?: if (toYou) senderFromTitle(title) else null
+      ?: bareSender
     val matched = toYou || hasSent || receivedMatch != null || creditedMatch != null ||
       moneyReceivedRe.containsMatchIn(combined) || hindiIncomingRe.containsMatchIn(combined) ||
-      genericIncomingRe.containsMatchIn(combined)
+      genericIncomingRe.containsMatchIn(combined) || bareFallback
     if (!matched) {
       return Decision(false, null, "amount-without-context")
     }
 
     val normalizedSender = (sender ?: "").lowercase().replace(Regex("""[^a-z0-9]"""), "")
     val bucket = postedAt / WINDOW_MS
-    val currentKey = "$paise|$normalizedSender|$bucket"
-    val previousKey = "$paise|$normalizedSender|${bucket - 1}"
+    val currentKey = "$resolvedPaise|$normalizedSender|$bucket"
+    val previousKey = "$resolvedPaise|$normalizedSender|${bucket - 1}"
     synchronized(lock) {
       pruneLocked(nowMs)
       if (seen.containsKey(currentKey) || seen.containsKey(previousKey)) {
@@ -121,9 +160,9 @@ object UpiAnnounceGate {
     }
     return Decision(
       speak = true,
-      text = buildAnnouncement(paise, sender),
-      reason = "ok",
-      amountPaise = paise,
+      text = buildAnnouncement(resolvedPaise, sender),
+      reason = if (bareFallback) "ok-bare" else "ok",
+      amountPaise = resolvedPaise,
       sender = sender,
       appName = appNames[packageName] ?: packageName,
       sourcePackage = packageName
@@ -142,7 +181,29 @@ object UpiAnnounceGate {
 
   private fun firstAmountPaise(combined: String): Long? {
     for (match in amountRe.findAll(combined)) {
+      val windowStart = maxOf(0, match.range.first - BALANCE_WINDOW)
+      if (balanceContextRe.containsMatchIn(combined.substring(windowStart, match.range.first))) {
+        continue
+      }
       toPaise(match.groupValues[1])?.let { return it }
+    }
+    return null
+  }
+
+  private fun bareSenderExtract(combined: String): String? {
+    val bareReceived = bareReceivedFromRe.find(combined)
+    val bareCredited = if (bareReceived == null) bareCreditedRe.find(combined) else null
+    val bareSent = if (bareReceived == null && bareCredited == null) bareSentToYouRe.find(combined) else null
+    val raw = bareReceived?.groupValues?.get(1)
+      ?: bareCredited?.groupValues?.get(1)
+      ?: bareSent?.groupValues?.get(1)
+    return cleanSender(raw)
+  }
+
+  private fun firstBareAmount(combined: String): Pair<Long, String?>? {
+    val deDated = dateLikeRe.replace(combined, " ")
+    for (match in bareAmountRe.findAll(deDated)) {
+      toPaise(match.groupValues[1])?.let { return it to bareSenderExtract(combined) }
     }
     return null
   }

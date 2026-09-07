@@ -136,23 +136,49 @@ describe("unparseable input stays silent", () => {
     expect(outcome.reason).toBe("empty-text");
   });
 
-  test("bare amount without currency symbol is currently missed", () => {
-    // Documents current behavior: amount regex requires ₹/Rs/INR.
-    // Phase 4 (bare-amount fallback) will change this to "parsed".
+  test("bare amount without currency symbol falls back to medium", () => {
     const outcome = parseUpiNotification(
       event(GPAY, "GPay", "Received 500 from Aman"),
+    );
+    expect(outcome.kind).toBe("parsed");
+    if (outcome.kind !== "parsed") return;
+    expect(outcome.payment.amountPaise).toBe(50000);
+    expect(outcome.payment.sender).toBe("Aman");
+    expect(outcome.payment.confidence).toBe("medium");
+    expect(outcome.payment.patternId).toBe("bare-amount-fallback");
+  });
+
+  test("bare outgoing stays outgoing", () => {
+    expect(
+      parseUpiNotification(event(GPAY, "GPay", "Sent 500 to Sharma")).kind,
+    ).toBe("outgoing");
+    expect(
+      parseUpiNotification(event(GPAY, "GPay", "Paid 500 to Sharma")).kind,
+    ).toBe("outgoing");
+  });
+
+  test("bare number without payment context stays silent", () => {
+    const outcome = parseUpiNotification(
+      event(GPAY, "GPay", "Your balance is 12000"),
     );
     expect(outcome.kind).toBe("none");
   });
 
-  test("balance-first text currently takes the first amount", () => {
-    // Documents current first-amount-wins behavior.
-    // Phase 4 (balance guard) will change this to 50000.
+  test("balance-first text skips the balance amount", () => {
     const outcome = parseUpiNotification(
       event(GPAY, "GPay", "Balance ₹12,000. Received ₹500 from Aman"),
     );
     expect(outcome.kind).toBe("parsed");
     if (outcome.kind !== "parsed") return;
-    expect(outcome.payment.amountPaise).toBe(1200000);
+    expect(outcome.payment.amountPaise).toBe(50000);
+  });
+
+  test("trailing balance does not shadow the payment", () => {
+    const outcome = parseUpiNotification(
+      event(GPAY, "GPay", "Received ₹500 from Aman. Available balance ₹12,000"),
+    );
+    expect(outcome.kind).toBe("parsed");
+    if (outcome.kind !== "parsed") return;
+    expect(outcome.payment.amountPaise).toBe(50000);
   });
 });
