@@ -100,6 +100,12 @@ export default function HomeScreen() {
       .catch(() => {});
     const subs = [
       addAnnouncementListener((event) => {
+        // Only live payment announcements belong in status + History.
+        // Test/replay speech (source "test") and self-tests also emit
+        // onAnnouncement with amountPaise = -1 — never store those.
+        if (event.source !== "notification" || event.amountPaise < 0) {
+          return;
+        }
         setAnnouncement(event);
         insertAnnouncedPayment(event, event.sourcePackage)
           .then(() => reloadPayments())

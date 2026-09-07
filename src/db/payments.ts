@@ -34,6 +34,16 @@ export async function insertAnnouncedPayment(
   event: AnnouncementEvent,
   sourcePackage: string,
 ): Promise<number> {
+  // Defense-in-depth: only live payment announcements are stored.
+  // Test/replay speech and self-tests emit onAnnouncement with
+  // amountPaise = -1 and a non-"notification" source — reject those
+  // here so no caller can pollute History, even by accident.
+  if (event.source !== "notification" || event.amountPaise < 0) {
+    console.log(
+      `[history] skipping non-payment announcement (source=${event.source})`,
+    );
+    return -1;
+  }
   const announcedAt = Date.now();
   const sender = event.sender || null;
   const dedupKey = makeDedupKey(event.amountPaise, sender, event.postedAt);
