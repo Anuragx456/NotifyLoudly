@@ -195,7 +195,7 @@ export default function HomeScreen() {
             : "Nothing can be heard until access is on and the listener is bound."}
         </Text>
         {!accessGranted && (
-          <Link href="/onboarding" asChild>
+          <Link href="/disclosure" asChild>
             <Pressable style={styles.primary} accessibilityRole="button">
               <Text style={styles.primaryLabel}>Enable notification access</Text>
             </Pressable>
