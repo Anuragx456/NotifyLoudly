@@ -91,6 +91,13 @@ const GENERIC_INCOMING: AppPattern = {
   confidence: "medium",
 };
 
+// "You have sent ₹X (to …)" / "You've sent ₹X (to …)" — the sender is you,
+// so this is ALWAYS outgoing, even though "have sent ₹X" alone looks like
+// an incoming credit (cf. has-sent-to-account). Checked before every
+// other pattern: a false "received" announcement for money you sent is
+// worse than staying silent.
+const YOU_HAVE_SENT_RE = /\byou(?:'ve|\s+have)\s+sent\s+(?:₹|Rs\.?|INR)/i;
+
 function appParser(packageName: string, appName: string): AppParser {
   return {
     packageName,
@@ -127,7 +134,7 @@ function senderBeforeHasSent(combined: string): string | null {
   if (!match || match.index === undefined) return null;
   const before = combined.slice(0, match.index).trim();
   if (!before) return null;
-  const stop = new Set(["money", "payment", "amount", "received", "credited", "your", "bank", "account"]);
+  const stop = new Set(["money", "payment", "amount", "received", "credited", "your", "bank", "account", "you"]);
   const words = before.split(/\s+/).filter(Boolean).slice(-4);
   const name = words.filter((w) => !stop.has(w.toLowerCase().replace(/[.`,;:]+$/g, ""))).join(" ");
   const cleaned = cleanSender(name.slice(0, 40));
@@ -146,6 +153,9 @@ export function parseUpiNotification(event: UpiNotification): ParseOutcome {
     .trim();
   if (combined.length === 0) {
     return { kind: "none", reason: "empty-text", attempted: [] };
+  }
+  if (YOU_HAVE_SENT_RE.test(combined)) {
+    return { kind: "outgoing" };
   }
 
   const attempted: string[] = [];

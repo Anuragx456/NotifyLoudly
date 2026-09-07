@@ -17,6 +17,12 @@ object UpiAnnounceGate {
     Regex("""(?:money|payment|amount)\s+received""", RegexOption.IGNORE_CASE)
   private val hindiIncomingRe =
     Regex("""(?:प्राप्त|जमा|क्रेडिट)""")
+  // "You have sent ₹X (to …)" / "You've sent ₹X (to …)" — the sender is
+  // you, so this is ALWAYS outgoing, even though "have sent ₹X" alone looks
+  // like an incoming credit (cf. hasSentRe). Checked before everything else:
+  // a false "received" announcement for money you sent is worse than silence.
+  private val youHaveSentRe =
+    Regex("""\byou(?:'ve|\s+have)\s+sent\s+(?:₹|Rs\.?|INR)""", RegexOption.IGNORE_CASE)
   // "Aman sent ₹1 to you." — PhonePe chat-style credit. The generic
   // sent/debited outgoing pattern matches "sent ₹1", so this incoming form
   // must be checked BEFORE the outgoing list (see decide()).
@@ -79,6 +85,9 @@ object UpiAnnounceGate {
       .trim()
     if (combined.isEmpty()) {
       return Decision(false, null, "empty-text")
+    }
+    if (youHaveSentRe.containsMatchIn(combined)) {
+      return Decision(false, null, "outgoing")
     }
     val toYou = toYouRe.containsMatchIn(combined)
     val hasSent = hasSentRe.containsMatchIn(combined)
@@ -170,7 +179,7 @@ object UpiAnnounceGate {
     val idx = hasSentRe.find(combined)?.range?.first ?: return null
     val before = combined.substring(0, idx).trim()
     if (before.isEmpty()) return null
-    val stop = setOf("money", "payment", "amount", "received", "credited", "your", "bank", "account")
+    val stop = setOf("money", "payment", "amount", "received", "credited", "your", "bank", "account", "you")
     val words = before.split(Regex("""\s+""")).filter { it.isNotEmpty() }.takeLast(4)
     val name = words.filter { it.lowercase().trim('.', ',', ';', ':') !in stop }.joinToString(" ")
     return stripGenericTitle(name.take(40))
