@@ -37,3 +37,11 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Local build / tool caches
+.bun-tmp/
+.cache-keys.txt
+
+# Nested native build outputs (generated via prebuild / gradle)
+**/android/build/
+**/.cxx/

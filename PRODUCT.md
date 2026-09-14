@@ -12,7 +12,7 @@ Primary user is the counter merchant — a small Indian shopkeeper who keeps one
 
 ## Product Purpose
 
-NotifyLoud listens for incoming UPI payment notifications, extracts the amount and sender, and speaks it aloud in near-real-time so the merchant can confirm payment by ear. Success is every incoming UPI payment announced loudly, correctly, and within well under a second, with a glanceable Listening / Not listening status when it cannot hear.
+NotifyLoudly listens for incoming UPI payment notifications, extracts the amount and sender, and speaks it aloud in near-real-time so the merchant can confirm payment by ear. Success is every incoming UPI payment announced loudly, correctly, and within well under a second, with a glanceable Listening / Not listening status when it cannot hear.
 
 ## Positioning
 
@@ -26,13 +26,11 @@ Phone sits on the counter, screen may be off, app may be backgrounded. Workflows
 
 Confirmed functionality: custom Kotlin Expo module (`modules/upi-listener`) for NotificationListenerService, foreground service, and TTS; amount parser and dedup in `src/parsers`; on-device history in `expo-sqlite` (WAL mode) via `src/db/payments`; routes for home status, disclosure, onboarding, history, settings, reliability, diagnostics; settings for speech rate (0.5–2.0), locale tag (`en-IN`, `hi-IN`), audio ducking, mute, and per-app allowlist (`DEFAULT_UPI_PACKAGES`: GPay, PhonePe, Paytm, BHIM, …); test-voice and replay speech.
 
-Technical constraints: Android only (`com.notifyloud.upiannouncer`, scheme `upiannouncer`, portrait, Expo SDK 57 New Architecture, Hermes); Bun as package manager (`bun install`, `bun run android`); Expo Go cannot run native features — local dev build required; full notification text is never stored long-term; no account, no server, no upload, no analytics.
-
-Undecided: canonical display name (see Brand Commitments).
+Technical constraints: Android only (`com.notifyloudly.notifyloudly`, scheme `notifyloudly`, portrait, Expo SDK 57 New Architecture, Hermes); Bun as package manager (`bun install`, `bun run android`); Expo Go cannot run native features — local dev build required; full notification text is never stored long-term; no account, no server, no upload, no analytics.
 
 ## Brand Commitments
 
-Observed: `app.json` name is "UPI Payment Announcer" (slug `upi-payment-announcer`); in-app copy and system-settings references use "NotifyLoud". Package `com.notifyloud.upiannouncer`. Voice is plain, instructional merchant copy (e.g. "Keep this phone on the counter"). No binding visual constraint volunteered. Canonical display name left undecided — future work must not invent a new name.
+Canonical display name is **NotifyLoudly** everywhere — `app.json` `name`, store listing, in-app copy, and system-settings references. Package is `com.notifyloudly.notifyloudly` (slug `notifyloudly`); `com.notifyloud.upiannouncer` / `upi-payment-announcer` are legacy aliases. Voice is plain, instructional merchant copy (e.g. "Keep this phone on the counter"). No binding visual constraint volunteered.
 
 ## Evidence on Hand
 

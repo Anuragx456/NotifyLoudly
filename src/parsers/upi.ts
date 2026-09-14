@@ -1,5 +1,6 @@
 import type { UpiNotification } from "upi-listener";
-import { extractAmounts, toPaise } from "./amount";
+import { extractAmounts, hasOutOfRangeSymbolAmount, toPaise } from "./amount";
+import { BALANCE_WINDOW } from "./constants";
 import type { ParseConfidence, ParsedPayment } from "./types";
 
 interface AppPattern {
@@ -38,14 +39,14 @@ const INCOMING_TEMPLATES: AppPattern[] = [
     id: "received-from",
     direction: "incoming",
     test: /received\s+(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{1,2})?\s+from\s+/i,
-    sender: /received\s+(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{1,2})?\s+from\s+([A-Za-z0-9 .'\-&()]{1,60})/i,
+    sender: /received\s+(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{1,2})?\s+from\s+([\p{L}\p{N} .'\-&()]{1,60})/iu,
     confidence: "high",
   },
   {
     id: "credited-from",
     direction: "incoming",
     test: /credited\s+(?:with\s+)?(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{1,2})?/i,
-    sender: /credited\s+(?:with\s+)?(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{1,2})?\s+(?:from|by)\s+([A-Za-z0-9 .'\-&()]{1,60})/i,
+    sender: /credited\s+(?:with\s+)?(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{1,2})?\s+(?:from|by)\s+([\p{L}\p{N} .'\-&()]{1,60})/iu,
     confidence: "high",
   },
   {
@@ -102,7 +103,6 @@ const YOU_HAVE_SENT_RE = /\byou(?:'ve|\s+have)\s+sent\s+(?:₹|Rs\.?|INR)/i;
 // the account balance, not the payment — e.g. "Balance ₹12,000. Received
 // ₹500 from Aman" must announce ₹500, not ₹12,000.
 const BALANCE_CONTEXT_RE = /balance|avail|closing|total\s+due/i;
-const BALANCE_WINDOW = 15;
 
 function nonBalanceAmounts(text: string): { raw: string; paise: number }[] {
   return extractAmounts(text).filter(
@@ -123,12 +123,14 @@ const BARE_INCOMING_RE =
 const BARE_OUTGOING_RE =
   /(?:you(?:'ve|\s+have)\s+sent\s+\d|paid\s+\d+\s+to\s+(?!you\b|your\b)|(?:sent|debited|transferred)\s+\d+(?!\s+to\s+you\b)(?!\s+to\s+your\b)|payment\s+(?:of\s+\d+\s+)?(?:successful|completed|done)\s+to\s+(?!you\b|your\b))/i;
 const DATE_LIKE_RE = /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/g;
-const BARE_AMOUNT_RE = /(?<![\d₹\w,.])(\d{1,9}(?:\.\d{1,2})?)(?![\d])/g;
+// No lookbehind: Hermes (Expo SDK 57) rejects (?<!...) at module load,
+// which blanks the whole parser on device. Use a leading non-capture instead.
+const BARE_AMOUNT_RE = /(?:^|[^0-9₹\w,.])(\d{1,9}(?:\.\d{1,2})?)(?![\d])/g;
 
 function bareSender(combined: string): string | null {
   const patterns = [
-    /received\s+\d+(?:\.\d{1,2})?\s+from\s+([A-Za-z0-9 .'\-&()]{1,60})/i,
-    /credited\s+(?:with\s+)?\d+(?:\.\d{1,2})?\s+(?:from|by)\s+([A-Za-z0-9 .'\-&()]{1,60})/i,
+    /received\s+\d+(?:\.\d{1,2})?\s+from\s+([\p{L}\p{N} .'\-&()]{1,60})/iu,
+    /credited\s+(?:with\s+)?\d+(?:\.\d{1,2})?\s+(?:from|by)\s+([\p{L}\p{N} .'\-&()]{1,60})/iu,
     /(.{1,40}?)\s+sent\s+\d+(?:\.\d{1,2})?\s+to\s+you\b/i,
   ];
   for (const re of patterns) {
@@ -171,12 +173,11 @@ function appParser(packageName: string, appName: string): AppParser {
   };
 }
 
-export const PARSER_TABLE: AppParser[] = [
-  appParser("com.google.android.apps.nbu.paisa.user", "Google Pay"),
-  appParser("com.phonepe.app", "PhonePe"),
-  appParser("net.one97.paytm", "Paytm"),
-  appParser("in.org.npci.upiapp", "BHIM"),
-];
+import { UPI_APPS } from "@/components/upiApps";
+
+export const PARSER_TABLE: AppParser[] = UPI_APPS.map((app) =>
+  appParser(app.packageName, app.name),
+);
 
 export type ParseOutcome =
   | { kind: "parsed"; payment: ParsedPayment }
@@ -269,6 +270,13 @@ export function parseUpiNotification(event: UpiNotification): ParseOutcome {
     return {
       kind: "none",
       reason: "amount-without-payment-context",
+      attempted,
+    };
+  }
+  if (hasOutOfRangeSymbolAmount(combined)) {
+    return {
+      kind: "none",
+      reason: "amount-out-of-range",
       attempted,
     };
   }

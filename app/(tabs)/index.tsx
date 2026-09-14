@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Link, useFocusEffect } from "expo-router";
+import { Link, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   addAnnouncementListener,
@@ -10,6 +10,7 @@ import {
   getMuted,
   isListenerConnected,
   isNotificationAccessEnabled,
+  seedNativeDedupKey,
   setMuted,
   speakTest,
   startTtsService,
@@ -25,7 +26,11 @@ import {
 } from "@/db/payments";
 import { seedDedupKey } from "@/parsers";
 import { normalizeLocaleTag } from "@/store/settings";
-import { COLORS } from "@/components/theme";
+import { hasCompletedOnboarding } from "@/store/onboarding";
+import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
+import { StatusPill } from "@/components/StatusPill";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Snackbar } from "@/components/Snackbar";
 
 function formatTime(postedAt: number): string {
   if (!postedAt) return "—";
@@ -34,12 +39,17 @@ function formatTime(postedAt: number): string {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [accessGranted, setAccessGranted] = useState(false);
   const [connected, setConnected] = useState(false);
   const [muted, setMutedState] = useState(false);
   const [announcement, setAnnouncement] = useState<AnnouncementEvent | null>(null);
   const [payments, setPayments] = useState<StoredPayment[]>([]);
   const [playMsg, setPlayMsg] = useState<string | null>(null);
+  const [snack, setSnack] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
 
   const refreshStatus = useCallback(() => {
     try {
@@ -71,14 +81,20 @@ export default function HomeScreen() {
     useCallback(() => {
       refreshStatus();
       reloadPayments();
-    }, [refreshStatus, reloadPayments]),
+      if (!onboardingChecked) {
+        setOnboardingChecked(true);
+        hasCompletedOnboarding().then((done) => {
+          if (!done) router.replace("/disclosure");
+        });
+      }
+    }, [refreshStatus, reloadPayments, onboardingChecked, router]),
   );
 
   useEffect(() => {
     try {
       startTtsService();
       const last = getLastAnnouncement();
-      if (last) {
+      if (last && (last.source === "notification" || last.source == null)) {
         setAnnouncement({
           text: last.text,
           latencyMs: last.latencyMs,
@@ -96,21 +112,27 @@ export default function HomeScreen() {
     }
     reloadPayments();
     loadRecentDedupSeeds()
-      .then((seeds) => seeds.forEach((seed) => seedDedupKey(seed.key, seed.seenAt)))
+      .then((seeds) =>
+        seeds.forEach((seed) => {
+          seedDedupKey(seed.key, seed.seenAt);
+          seedNativeDedupKey(seed.key, seed.seenAt);
+        }),
+      )
       .catch(() => {});
     const subs = [
       addAnnouncementListener((event) => {
-        // Only live payment announcements belong in status + History.
-        // Test/replay speech (source "test") and self-tests also emit
-        // onAnnouncement with amountPaise = -1 — never store those.
         if (event.source !== "notification" || event.amountPaise < 0) {
           return;
         }
-        setAnnouncement(event);
         insertAnnouncedPayment(event, event.sourcePackage)
-          .then(() => reloadPayments())
+          .then((rowId) => {
+            if (rowId !== -1) setAnnouncement(event);
+            reloadPayments();
+          })
           .catch((error) => {
             console.warn("[history] failed to store announcement", error);
+            setAnnouncement(event);
+            reloadPayments();
           });
       }),
       addListenerConnectionListener((event) => {
@@ -144,23 +166,21 @@ export default function HomeScreen() {
       : null;
 
   const onPlayLastPayment = useCallback(() => {
-    setPlayMsg(null);
-    if (!playTarget) {
-      setPlayMsg("No payments yet to play.");
-      return;
-    }
-    const ok = speakPayment(playTarget.amountPaise, playTarget.sender ?? null);
-    if (!ok) {
-      setPlayMsg("Could not play — use the local dev build (`bun run android`).");
+    if (!playTarget) return;
+    const ok = speakPayment(playTarget.amountPaise, playTarget.sender);
+    if (ok) {
+      setSnack(`Announced ${formatINR(playTarget.amountPaise)}`);
+      setPlayMsg(null);
+    } else {
+      setPlayMsg("Voice unavailable — use local dev build.");
     }
   }, [playTarget, speakPayment]);
 
   const onReplay = useCallback(
-    (payment: StoredPayment) => {
-      const ok = speakPayment(payment.amountPaise, payment.sender);
-      setPlayMsg(
-        ok ? null : "Could not play — use the local dev build (`bun run android`).",
-      );
+    (item: StoredPayment) => {
+      const ok = speakPayment(item.amountPaise, item.sender);
+      if (ok) setSnack(`Replaying ${formatINR(item.amountPaise)}`);
+      else setPlayMsg("Voice unavailable on this build.");
     },
     [speakPayment],
   );
@@ -170,24 +190,29 @@ export default function HomeScreen() {
       const next = !muted;
       setMuted(next);
       setMutedState(next);
+      setSnack(next ? "Speaker muted — still logging" : "Speaker unmuted");
     } catch {
       setPlayMsg("Mute toggle unavailable on this build.");
     }
   }, [muted]);
 
   const listening = accessGranted && connected;
+  const previewPayments = payments.slice(0, 3);
 
   return (
-    <View style={styles.screen}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.kicker}>Counter status</Text>
-        <View style={styles.statusRow}>
-          <View style={[styles.dot, listening ? styles.dotOn : styles.dotOff]} />
-          <Text style={[styles.status, listening ? styles.statusOn : styles.statusOff]}>
+    <View style={[styles.screen, { backgroundColor: theme.paper }]}>
+      <ScrollView
+        style={[styles.container, { backgroundColor: theme.paper }]}
+        contentContainerStyle={[styles.content, { paddingTop: Math.max(16, insets.top + 16), paddingBottom: 32 }]}
+      >
+        <Text style={[styles.kicker, { color: theme.muted }]}>Counter status</Text>
+        <View style={styles.statusRow} accessibilityRole="header">
+          <View style={[styles.dot, { backgroundColor: listening ? theme.green : theme.red }]} />
+          <Text style={[styles.status, { color: listening ? theme.green : theme.red }]}>
             {listening ? "Listening" : "Not listening"}
           </Text>
         </View>
-        <Text style={styles.hint}>
+        <Text style={[styles.hint, { color: theme.faint }]}>
           {listening
             ? muted
               ? "Hearing payments, but speaker is muted."
@@ -196,86 +221,100 @@ export default function HomeScreen() {
         </Text>
         {!accessGranted && (
           <Link href="/disclosure" asChild>
-            <Pressable style={styles.primary} accessibilityRole="button">
-              <Text style={styles.primaryLabel}>Enable notification access</Text>
+            <Pressable style={StyleSheet.flatten([styles.primary, { backgroundColor: theme.ink }])} accessibilityRole="button">
+              <Text style={[styles.primaryLabel, { color: theme.paper }]}>Enable notification access</Text>
             </Pressable>
           </Link>
         )}
+        {!listening && accessGranted && !connected && (
+          <Text style={[styles.hint, { color: theme.muted, fontWeight: "600" as const }]}>
+            Access granted but listener unbound — open Diagnostics and tap Recheck, then reboot once.
+          </Text>
+        )}
 
-        <Text style={styles.section}>Last payment</Text>
+        <Text style={[styles.section, { color: theme.muted }]}>Last payment</Text>
         {announcement && announcement.amountPaise >= 0 ? (
-          <View style={styles.lastBox}>
-            <Text style={styles.lastAmount}>{formatINR(announcement.amountPaise)}</Text>
-            <Text style={styles.lastApp}>
+          <View style={[styles.lastBox, { borderColor: theme.line, backgroundColor: theme.card }]}>
+            <Text style={[styles.lastAmount, { color: theme.ink }]}>{formatINR(announcement.amountPaise)}</Text>
+            <Text style={[styles.lastApp, { color: theme.ink }]}>
               {announcement.appName}
               {announcement.sender ? ` · from ${announcement.sender}` : ""}
             </Text>
-            <Text style={styles.spoken}>“{announcement.text}”</Text>
-            <Text style={styles.meta}>
+            <Text style={[styles.spoken, { color: theme.faint }]}>“{announcement.text}”</Text>
+            <Text style={[styles.meta, { color: theme.muted }]}>
               {formatTime(announcement.postedAt)} · spoken in {announcement.latencyMs} ms
               {announcement.muted ? " · muted" : ""}
             </Text>
           </View>
         ) : (
-          <Text style={styles.empty}>
-            No payments announced yet. Have someone send you ₹1 (incoming payments only — money you send is ignored).
-          </Text>
+          <View style={[styles.emptyCard, { borderColor: theme.line, backgroundColor: theme.card }]}>
+            <Text style={[styles.empty, { color: theme.muted }]}>
+              No payments announced yet. Have someone send you ₹1 (incoming payments only — money you send is ignored).
+            </Text>
+          </View>
         )}
 
         <View style={styles.actions}>
           <Pressable
-            style={[styles.secondary, !playTarget && styles.disabled]}
+            style={[styles.secondary, { borderColor: theme.ink, backgroundColor: theme.paper }, !playTarget && styles.disabled]}
             onPress={onPlayLastPayment}
             disabled={!playTarget}
             accessibilityRole="button"
             accessibilityLabel="Play last payment"
           >
-            <Text style={styles.secondaryLabel}>Play last payment</Text>
+            <Text style={[styles.secondaryLabel, { color: theme.ink }]}>Play last payment</Text>
           </Pressable>
           <Pressable
-            style={[styles.secondary, muted && styles.mutedActive]}
+            style={[styles.secondary, { borderColor: theme.ink, backgroundColor: muted ? theme.line : theme.paper }, muted && styles.mutedActive]}
             onPress={onToggleMute}
             accessibilityRole="switch"
             accessibilityState={{ checked: muted }}
           >
-            <Text style={styles.secondaryLabel}>{muted ? "Unmute speaker" : "Mute speaker"}</Text>
+            <Text style={[styles.secondaryLabel, { color: theme.ink }]}>{muted ? "Unmute speaker" : "Mute speaker"}</Text>
           </Pressable>
         </View>
-        {playMsg && <Text style={styles.testMsg}>{playMsg}</Text>}
+        {playMsg && <Text style={[styles.testMsg, { color: theme.faint }]}>{playMsg}</Text>}
 
         <View style={styles.historyHeader}>
-          <Text style={styles.section}>Payment history</Text>
-          <Link href="/history" style={styles.viewAll}>
-            View all
+          <Text style={[styles.section, { color: theme.muted, marginBottom: 0 }]}>Recent payments</Text>
+          <Link href="/history" style={StyleSheet.flatten([styles.viewAll, { color: theme.ink }])}>
+            View all {payments.length > 0 ? `(${payments.length})` : ""}
           </Link>
         </View>
-        {payments.length === 0 ? (
-          <Text style={styles.empty}>
+        <Text style={[styles.historyHint, { color: theme.muted }]}>Newest 3 — full list in History tab</Text>
+        {previewPayments.length === 0 ? (
+          <Text style={[styles.empty, { color: theme.muted, marginTop: 8 }]}>
             No announced payments yet. They will appear here after the first one is spoken aloud.
           </Text>
         ) : (
-          payments.map((item) => (
-            <View key={item.id} style={styles.historyRow}>
-              <View style={styles.historyMain}>
-                <Text style={styles.historyAmount}>{formatINR(item.amountPaise)}</Text>
-                <Text style={styles.historyMeta}>
-                  {item.appName} · {formatTime(item.announcedAt)}
-                </Text>
-                {item.sender && <Text style={styles.historyMeta}>From {item.sender}</Text>}
+          <>
+            {previewPayments.map((item) => (
+              <View key={item.id} style={[styles.historyRow, { borderBottomColor: theme.line }]}>
+                <View style={styles.historyMain}>
+                  <Text style={[styles.historyAmount, { color: theme.ink }]}>{formatINR(item.amountPaise)}</Text>
+                  <Text style={[styles.historyMeta, { color: theme.muted }]}>
+                    {item.appName} · {formatTime(item.announcedAt)}
+                  </Text>
+                  {item.sender && <Text style={[styles.historyMeta, { color: theme.muted }]}>From {item.sender}</Text>}
+                </View>
+                <Pressable
+                  style={[styles.replay, { borderColor: theme.ink }]}
+                  onPress={() => onReplay(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Replay ${formatINR(item.amountPaise)}`}
+                >
+                  <Text style={[styles.replayLabel, { color: theme.ink }]}>Replay</Text>
+                </Pressable>
               </View>
-              <Pressable
-                style={styles.replay}
-                onPress={() => onReplay(item)}
-                accessibilityRole="button"
-                accessibilityLabel={`Replay ${formatINR(item.amountPaise)}`}
-              >
-                <Text style={styles.replayLabel}>Replay</Text>
-              </Pressable>
-            </View>
-          ))
+            ))}
+            {payments.length > 3 && (
+              <Text style={[styles.moreHint, { color: theme.muted }]}>+ {payments.length - 3} more in History</Text>
+            )}
+          </>
         )}
-        <StatusBar style="dark" />
+        <StatusBar style={theme.statusBar} />
       </ScrollView>
+      <Snackbar message={snack} onDismiss={() => setSnack(null)} />
     </View>
   );
 }
@@ -283,23 +322,20 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.paper,
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.paper,
   },
   content: {
     paddingHorizontal: 20,
-    paddingTop: 64,
     paddingBottom: 32,
   },
   kicker: {
-    fontSize: 13,
+    fontFamily: FONTS.bold,
+    fontSize: 12,
     fontWeight: "700",
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
     textTransform: "uppercase",
-    color: COLORS.muted,
   },
   statusRow: {
     marginTop: 8,
@@ -312,70 +348,54 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 10,
   },
-  dotOn: {
-    backgroundColor: COLORS.green,
-  },
-  dotOff: {
-    backgroundColor: COLORS.red,
-  },
   status: {
-    fontSize: 36,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  statusOn: {
-    color: COLORS.green,
-  },
-  statusOff: {
-    color: COLORS.red,
+    ...TYPE.displayMedium,
   },
   hint: {
     marginTop: 8,
-    fontSize: 15,
-    lineHeight: 22,
-    color: COLORS.faint,
+    ...TYPE.bodyMedium,
   },
   section: {
     marginTop: 28,
     marginBottom: 8,
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 1.5,
+    ...TYPE.labelSmall,
     textTransform: "uppercase",
-    color: COLORS.muted,
   },
   lastBox: {
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.ink,
-    paddingLeft: 12,
-    paddingVertical: 4,
+    borderWidth: 1,
+    paddingLeft: 16,
+    paddingVertical: 12,
+    borderRadius: RADIUS.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 1,
   },
   lastAmount: {
-    fontSize: 40,
-    fontWeight: "800",
-    color: COLORS.ink,
+    ...TYPE.amountHero,
   },
   lastApp: {
-    marginTop: 4,
-    fontSize: 16,
-    fontWeight: "700",
-    color: COLORS.ink,
+    marginTop: 6,
+    ...TYPE.titleMedium,
   },
   spoken: {
-    marginTop: 4,
-    fontSize: 15,
-    lineHeight: 22,
-    color: COLORS.faint,
+    marginTop: 6,
+    ...TYPE.bodyMedium,
   },
   meta: {
-    marginTop: 4,
+    marginTop: 6,
+    fontFamily: FONTS.regular,
     fontSize: 12,
-    color: COLORS.muted,
+    letterSpacing: 0.2,
+  },
+  emptyCard: {
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: 16,
   },
   empty: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: COLORS.muted,
+    ...TYPE.bodyMedium,
   },
   actions: {
     marginTop: 24,
@@ -386,70 +406,74 @@ const styles = StyleSheet.create({
     minHeight: 56,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.ink,
-    borderRadius: 4,
+    borderRadius: RADIUS.sm,
   },
   primaryLabel: {
+    fontFamily: FONTS.bold,
     fontSize: 17,
     fontWeight: "700",
-    color: COLORS.paper,
   },
   secondary: {
     minHeight: 56,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: COLORS.ink,
-    borderRadius: 4,
-    backgroundColor: COLORS.paper,
+    borderRadius: RADIUS.sm,
   },
   disabled: {
     opacity: 0.4,
   },
   mutedActive: {
-    backgroundColor: COLORS.line,
+    opacity: 0.92,
   },
   secondaryLabel: {
+    fontFamily: FONTS.bold,
     fontSize: 16,
     fontWeight: "700",
-    color: COLORS.ink,
   },
   testMsg: {
     marginTop: 8,
+    fontFamily: FONTS.regular,
     fontSize: 14,
-    color: COLORS.faint,
   },
   historyHeader: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
+    marginTop: 4,
+  },
+  historyHint: {
+    fontFamily: FONTS.regular,
+    fontSize: 12,
+    marginBottom: 8,
   },
   viewAll: {
+    fontFamily: FONTS.bold,
     fontSize: 15,
     fontWeight: "700",
-    color: COLORS.ink,
     textDecorationLine: "underline",
     paddingVertical: 8,
+    paddingLeft: 12,
   },
   historyRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.line,
   },
   historyMain: {
     flex: 1,
   },
   historyAmount: {
-    fontSize: 24,
+    fontFamily: FONTS.extraBold,
+    fontSize: 22,
     fontWeight: "800",
-    color: COLORS.ink,
+    letterSpacing: -0.3,
   },
   historyMeta: {
     marginTop: 2,
+    fontFamily: FONTS.regular,
     fontSize: 13,
-    color: COLORS.muted,
   },
   replay: {
     minWidth: 88,
@@ -457,13 +481,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: COLORS.ink,
-    borderRadius: 4,
+    borderRadius: RADIUS.sm,
     marginLeft: 12,
   },
   replayLabel: {
+    fontFamily: FONTS.bold,
     fontSize: 15,
     fontWeight: "700",
-    color: COLORS.ink,
+  },
+  moreHint: {
+    marginTop: 10,
+    fontFamily: FONTS.semiBold,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

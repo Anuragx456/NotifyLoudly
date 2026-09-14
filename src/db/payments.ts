@@ -1,5 +1,9 @@
 import type { AnnouncementEvent } from "upi-listener";
+import { DEDUP_TTL_MS } from "@/parsers/constants";
 import { getDatabase } from "./client";
+import { makeDedupKey } from "./dedupKey";
+
+export { makeDedupKey } from "./dedupKey";
 
 export interface StoredPayment {
   id: number;
@@ -19,16 +23,6 @@ export interface DedupSeed {
   seenAt: number;
 }
 
-const DEDUP_WINDOW_MS = 10 * 60 * 1000;
-
-export function makeDedupKey(
-  amountPaise: number,
-  sender: string | null,
-  postedAt: number,
-): string {
-  const normalized = (sender ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  return `${amountPaise}|${normalized}|${Math.floor(postedAt / DEDUP_WINDOW_MS)}`;
-}
 
 export async function insertAnnouncedPayment(
   event: AnnouncementEvent,
@@ -46,10 +40,13 @@ export async function insertAnnouncedPayment(
   }
   const announcedAt = Date.now();
   const sender = event.sender || null;
-  const dedupKey = makeDedupKey(event.amountPaise, sender, event.postedAt);
+  // Use announcedAt as the fallback when postedAt==0 so the persisted
+  // key matches the in-memory coalesce bucket (30s). Otherwise fallbackNow
+  // drift near a bucket boundary leaves a seed that never matches.
+  const dedupKey = makeDedupKey(event.amountPaise, sender, event.postedAt, announcedAt);
   const database = getDatabase();
   const result = await database.runAsync(
-    `INSERT INTO payments
+    `INSERT OR IGNORE INTO payments
       (amount_paise, sender, source_package, app_name, speech_text,
        latency_ms, posted_at, announced_at, dedup_key)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -65,12 +62,19 @@ export async function insertAnnouncedPayment(
       dedupKey,
     ],
   );
+  if (result.changes === 0) {
+    const existing = await database.getFirstAsync<{ id: number }>(
+      `SELECT id FROM payments WHERE dedup_key = ?`,
+      [dedupKey],
+    );
+    return existing?.id ?? -1;
+  }
   await database.runAsync(
     `INSERT OR REPLACE INTO dedup_keys (dedup_key, seen_at) VALUES (?, ?)`,
     [dedupKey, announcedAt],
   );
   await database.runAsync(`DELETE FROM dedup_keys WHERE seen_at < ?`, [
-    announcedAt - DEDUP_WINDOW_MS,
+    announcedAt - DEDUP_TTL_MS,
   ]);
   return result.lastInsertRowId;
 }
@@ -107,7 +111,7 @@ export async function listRecentPayments(
 
 export async function loadRecentDedupSeeds(): Promise<DedupSeed[]> {
   const database = getDatabase();
-  const cutoff = Date.now() - DEDUP_WINDOW_MS;
+  const cutoff = Date.now() - DEDUP_TTL_MS;
   const rows = await database.getAllAsync<{
     dedup_key: string;
     seen_at: number;

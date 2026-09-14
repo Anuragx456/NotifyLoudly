@@ -66,6 +66,51 @@ describe("incoming payments are parsed", () => {
     expect(outcome.payment.patternId).toBe("has-sent-to-account");
   });
 
+  test("PhonePe Business received payment", () => {
+    const outcome = parseUpiNotification(
+      event(
+        "com.phonepe.app.business",
+        "Payment Received",
+        "Received ₹150 from Vikram Singh on PhonePe QR",
+      ),
+    );
+    expect(outcome.kind).toBe("parsed");
+    if (outcome.kind !== "parsed") return;
+    expect(outcome.payment.amountPaise).toBe(15000);
+    expect(outcome.payment.sender).toBe("Vikram Singh");
+    expect(outcome.payment.appName).toBe("PhonePe Business");
+  });
+
+  test("Navi received payment", () => {
+    const outcome = parseUpiNotification(
+      event(
+        "com.navi.services",
+        "Money Received",
+        "Received ₹500 from Rohit Sharma",
+      ),
+    );
+    expect(outcome.kind).toBe("parsed");
+    if (outcome.kind !== "parsed") return;
+    expect(outcome.payment.amountPaise).toBe(50000);
+    expect(outcome.payment.sender).toBe("Rohit Sharma");
+    expect(outcome.payment.appName).toBe("Navi");
+  });
+
+  test("Navi (com.naviapp) received payment", () => {
+    const outcome = parseUpiNotification(
+      event(
+        "com.naviapp",
+        "Money Received",
+        "Received ₹250 from Ankit Verma",
+      ),
+    );
+    expect(outcome.kind).toBe("parsed");
+    if (outcome.kind !== "parsed") return;
+    expect(outcome.payment.amountPaise).toBe(25000);
+    expect(outcome.payment.sender).toBe("Ankit Verma");
+    expect(outcome.payment.appName).toBe("Navi");
+  });
+
   test("credited-by extracts sender before date tail", () => {
     const outcome = parseUpiNotification(
       event(

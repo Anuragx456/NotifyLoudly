@@ -1,4 +1,4 @@
-# UPI Payment Announcer
+# NotifyLoudly
 
 Android app that listens for UPI payment notifications (GPay, PhonePe, Paytm,
 BHIM, …) via `NotificationListenerService`, parses the amount, and speaks it
@@ -49,7 +49,7 @@ early.
 
 ## Assumptions (Phase 0)
 
-- Android application id: `com.notifyloud.upiannouncer`
-- Deep-link scheme: `upiannouncer`
+- Android application id: `com.notifyloudly.notifyloudly`
+- Deep-link scheme: `notifyloudly`
 - New Architecture: SDK 57 default (verified in `android/gradle.properties`
   after prebuild)
