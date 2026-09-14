@@ -1,0 +1,590 @@
+import { useCallback, useEffect, useState } from "react";
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Link, useFocusEffect, useRouter } from "expo-router";
+import {
+  addListenerConnectionListener,
+  areAlertNotificationsEnabled,
+  isIgnoringBatteryOptimizations,
+  isListenerConnected,
+  isNativeModuleAvailable,
+  isNotificationAccessEnabled,
+  isOverlayAccessGranted,
+  openBatteryExemptionRequest,
+  openNotificationAccessSettings,
+  openOverlayAccessSettings,
+  requestAlertNotifications,
+  requestListenerRebind,
+} from "upi-listener";
+import { Ionicons } from "@expo/vector-icons";
+import { setOnboardingCompleted } from "@/store/onboarding";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
+
+export default function OnboardingScreen() {
+  const router = useRouter();
+  const [granted, setGranted] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [notifAllowed, setNotifAllowed] = useState(false);
+  const [overlayGranted, setOverlayGranted] = useState(false);
+  const [exempt, setExempt] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [rebindAsked, setRebindAsked] = useState(false);
+  const [rebindFailed, setRebindFailed] = useState(false);
+  const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
+
+  const recheck = useCallback(() => {
+    try {
+      setGranted(isNotificationAccessEnabled());
+    } catch {
+      setGranted(false);
+    }
+    try {
+      setConnected(isListenerConnected());
+    } catch {
+      setConnected(false);
+    }
+    try {
+      setNotifAllowed(areAlertNotificationsEnabled());
+    } catch {
+      setNotifAllowed(false);
+    }
+    try {
+      setOverlayGranted(isOverlayAccessGranted());
+    } catch {
+      setOverlayGranted(false);
+    }
+    try {
+      setExempt(isIgnoringBatteryOptimizations());
+    } catch {
+      setExempt(false);
+    }
+  }, []);
+
+  useFocusEffect(recheck);
+
+  // Opening system Settings backgrounds the app without blurring the route,
+  // so focus alone does not refire when the user comes back — re-check on
+  // every foreground transition too. The listener service can also take a few
+  // seconds to bind after the toggle, so re-probe briefly after each check
+  // while the grant is on but the service is still unbound.
+  useEffect(() => {
+    recheck();
+    const appSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") recheck();
+    });
+    // Bound-state flips only when the listener service binds/unbinds, which
+    // happens outside this screen — subscribe so the status tracks it live.
+    const connSub = (() => {
+      try {
+        return addListenerConnectionListener((event) => {
+          setConnected(event.connected);
+        });
+      } catch {
+        return null;
+      }
+    })();
+    return () => {
+      appSub.remove();
+      try {
+        connSub?.remove();
+      } catch {
+        // Tear-down is best effort.
+      }
+    };
+  }, [recheck]);
+
+  // Keep probing while access is on but the service hasn't bound yet —
+  // Android often needs a few seconds (or a nudge) after the toggle flips.
+  // After a grace window of failed probes, request a system rebind once and
+  // tell the user a reboot may be needed.
+  useEffect(() => {
+    if (!granted || connected) return;
+    setRebindFailed(false);
+    const probes = [1000, 2500, 4500, 7000, 10000, 14000];
+    const timers = probes.map((ms) => setTimeout(recheck, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [granted, connected, recheck]);
+  useEffect(() => {
+    if (!granted || connected || rebindAsked) return;
+    const timer = setTimeout(() => {
+      setRebindAsked(true);
+      let ok = false;
+      try {
+        ok = requestListenerRebind();
+      } catch {
+        ok = false;
+      }
+      if (!ok) setRebindFailed(true);
+      recheck();
+      setTimeout(recheck, 3000);
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [granted, connected, rebindAsked, recheck]);
+
+  const readyCount =
+    (granted ? 1 : 0) +
+    (notifAllowed ? 1 : 0) +
+    (overlayGranted ? 1 : 0) +
+    (exempt ? 1 : 0);
+
+  const overallTone = !granted ? "bad" : readyCount === 4 ? "good" : "neutral";
+  const overallLabel = !granted
+    ? "Not ready"
+    : readyCount === 4
+      ? "All set"
+      : `${readyCount} of 4 ready`;
+  const overallDot =
+    overallTone === "good" ? theme.green : overallTone === "bad" ? theme.red : theme.muted;
+  const overallText =
+    overallTone === "good" ? theme.green : overallTone === "bad" ? theme.red : theme.muted;
+
+  const finish = useCallback(async () => {
+    await setOnboardingCompleted();
+    router.replace("/");
+  }, [router]);
+
+  const needsNativeNotice =
+    "Needs the dev build (`bun run android`) — not Expo Go.";
+
+  const onOpenNotificationAccess = useCallback(() => {
+    if (!isNativeModuleAvailable()) {
+      setNotice(needsNativeNotice);
+      return;
+    }
+    setNotice(null);
+    setRebindAsked(false);
+    const opened = openNotificationAccessSettings();
+    if (!opened) {
+      setNotice("Couldn't open it — find Notification access in Settings, switch on NotifyLoudly.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onGrantNotif = useCallback(() => {
+    setNotice(null);
+    try {
+      if (!requestAlertNotifications()) {
+        setNotice("If nothing popped up, allow notifications for NotifyLoudly in Settings.");
+      }
+      recheck();
+      // Runtime permission dialogs overlay the app without backgrounding it,
+      // so neither focus nor AppState fires — poll once after the user answers.
+      setTimeout(recheck, 1000);
+    } catch {
+      setNotice("Notification request unavailable on this build.");
+    }
+  }, [recheck]);
+
+  const onGrantOverlay = useCallback(() => {
+    setNotice(null);
+    try {
+      if (!openOverlayAccessSettings()) {
+        setNotice("Couldn't open it — allow “Display over other apps” in Settings.");
+        return;
+      }
+      setNotice("Allow “Display over other apps”, then come back.");
+    } catch {
+      setNotice("Overlay settings unavailable on this build.");
+    }
+  }, []);
+
+  const onRequestExemption = useCallback(() => {
+    setNotice(null);
+    try {
+      const opened = openBatteryExemptionRequest();
+      if (!opened) setNotice("Couldn't open battery settings on this build.");
+    } catch {
+      setNotice("Battery request unavailable on this build.");
+    }
+  }, []);
+
+  const renderState = (on: boolean, pendingLabel?: string) => (
+    <View style={styles.stateRow}>
+      <View
+        style={[
+          styles.dot,
+          { backgroundColor: on ? theme.green : pendingLabel ? theme.muted : theme.red },
+        ]}
+      />
+      <Text
+        style={[
+          styles.state,
+          { color: on ? theme.green : pendingLabel ? theme.muted : theme.red },
+        ]}
+      >
+        {on ? "On" : (pendingLabel ?? "Off")}
+      </Text>
+    </View>
+  );
+
+  const renderAction = (label: string, onPress: () => void, a11y: string) => (
+    <Pressable
+      style={[styles.action, { backgroundColor: theme.ink }]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+    >
+      <Text style={[styles.actionLabel, { color: theme.paper }]}>{label}</Text>
+    </Pressable>
+  );
+
+  const renderDone = (a11y: string) => (
+    <View accessibilityRole="image" accessibilityLabel={a11y}>
+      <Ionicons name="checkmark-circle" size={28} color={theme.green} />
+    </View>
+  );
+
+  return (
+    <View style={[styles.root, { backgroundColor: theme.paper }]}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: Math.max(16, insets.top + 16),
+            paddingBottom: Math.max(24, insets.bottom + 24),
+          },
+        ]}
+      >
+        <Text style={[styles.wordmark, { color: theme.ink }]}>NotifyLoudly</Text>
+
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: theme.ink }]}>Turn on listening.</Text>
+          <Text style={[styles.sub, { color: theme.muted }]}>
+            {!granted
+              ? "One allow starts announcements."
+              : readyCount === 4
+                ? "Everything's on."
+                : "One starts it. The rest keep it loud."}
+          </Text>
+          <View style={styles.overall}>
+            <View style={[styles.dot, { backgroundColor: overallDot }]} />
+            <Text style={[styles.overallLabel, { color: overallText }]}>{overallLabel}</Text>
+          </View>
+        </View>
+
+        {!isNativeModuleAvailable() && (
+          <Text style={[styles.warning, { color: theme.red }]}>
+            Dev build needed — statuses read as off outside it.
+          </Text>
+        )}
+
+        <View style={[styles.list, { borderColor: theme.line, backgroundColor: theme.card }]}>
+          {/* Hear payments — required */}
+          <View style={styles.rowWrap}>
+            <View style={styles.row}>
+              <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
+                <Ionicons name="notifications-outline" size={20} color={theme.ink} />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, { color: theme.ink }]}>
+                  Hear payments <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
+                </Text>
+                {granted && !connected
+                  ? (
+                    <Text style={[styles.state, { color: theme.muted }]}>Binding…</Text>
+                  )
+                  : renderState(granted)}
+                {!granted && (
+                  <Text style={[styles.why, { color: theme.muted }]}>
+                    Without this, nothing speaks.
+                  </Text>
+                )}
+              </View>
+              {granted
+                ? connected
+                  ? renderDone("Notification access on and bound")
+                  : <View style={styles.pendingDot} accessibilityRole="image" accessibilityLabel="Binding" />
+                : renderAction("Turn on", onOpenNotificationAccess, "Turn on notification access")}
+            </View>
+            {(!granted || (granted && !connected)) && (
+              <View style={styles.subRow}>
+                {granted && !connected && (
+                  <Text style={[styles.why, { color: theme.muted }]}>
+                    {rebindFailed
+                      ? "Still not bound — reboot once, then return."
+                      : rebindAsked
+                        ? "Asked Android to bind it. A few seconds…"
+                        : "Waiting a few seconds…"}
+                  </Text>
+                )}
+                {!granted && (
+                  <Pressable onPress={recheck} accessibilityRole="button" hitSlop={12}>
+                    <Text style={[styles.checkAgain, { color: theme.ink }]}>Check again</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.line }]} />
+
+          {/* Show pop-up — required */}
+          <View style={styles.row}>
+            <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
+              <Ionicons name="alert-circle-outline" size={20} color={theme.ink} />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={[styles.rowTitle, { color: theme.ink }]}>
+                Show pop-up <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
+              </Text>
+              {renderState(notifAllowed)}
+            </View>
+            {notifAllowed
+              ? renderDone("Pop-up alerts on")
+              : renderAction("Allow", onGrantNotif, "Allow notifications")}
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.line }]} />
+
+          {/* Float on top — optional */}
+          <View style={styles.row}>
+            <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
+              <Ionicons name="layers-outline" size={20} color={theme.ink} />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={[styles.rowTitle, { color: theme.ink }]}>
+                Float on top <Text style={[styles.tag, { color: theme.muted }]}>· Optional</Text>
+              </Text>
+              {renderState(overlayGranted)}
+            </View>
+            {overlayGranted
+              ? renderDone("Display over apps on")
+              : renderAction("Allow", onGrantOverlay, "Allow display over apps")}
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: theme.line }]} />
+
+          {/* Stay on overnight — recommended */}
+          <View style={styles.row}>
+            <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
+              <Ionicons name="battery-charging-outline" size={20} color={theme.ink} />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={[styles.rowTitle, { color: theme.ink }]}>
+                Stay on overnight <Text style={[styles.tag, { color: theme.muted }]}>· Suggested</Text>
+              </Text>
+              {renderState(exempt)}
+            </View>
+            {exempt
+              ? renderDone("Battery exemption on")
+              : renderAction("Allow", onRequestExemption, "Allow battery exemption")}
+          </View>
+        </View>
+
+        {notice && <Text style={[styles.notice, { color: theme.red }]}>{notice}</Text>}
+
+        {!(granted && notifAllowed) && (
+          <Text style={[styles.hint, { color: theme.muted }]}>
+            Turn on the required steps to finish setup.
+          </Text>
+        )}
+
+        <View style={styles.footer}>
+          <Pressable
+            style={[
+              styles.primary,
+              { backgroundColor: theme.ink },
+              !(granted && notifAllowed) && styles.disabled,
+            ]}
+            onPress={finish}
+            disabled={!(granted && notifAllowed)}
+            accessibilityRole="button"
+            accessibilityLabel="Finish setup"
+            accessibilityState={{ disabled: !(granted && notifAllowed) }}
+          >
+            <Text style={[styles.primaryLabel, { color: theme.paper }]}>Finish setup</Text>
+          </Pressable>
+          <Link href="/disclosure" asChild>
+            <Pressable accessibilityRole="button" accessibilityLabel="Back">
+              <Text style={[styles.back, { color: theme.muted }]}>Back</Text>
+            </Pressable>
+          </Link>
+        </View>
+      </ScrollView>
+      <StatusBar style={theme.statusBar} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+  },
+  wordmark: {
+    fontFamily: FONTS.extraBold,
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  header: {
+    marginTop: 24,
+    alignItems: "center",
+  },
+  title: {
+    textAlign: "center",
+    ...TYPE.headlineLarge,
+  },
+  sub: {
+    marginTop: 8,
+    textAlign: "center",
+    ...TYPE.bodyLarge,
+  },
+  overall: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  overallLabel: {
+    fontFamily: FONTS.bold,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  warning: {
+    marginTop: 12,
+    textAlign: "center",
+    fontFamily: FONTS.semiBold,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  list: {
+    marginTop: 24,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    overflow: "hidden",
+  },
+  rowWrap: {
+    paddingBottom: 4,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  subRow: {
+    paddingHorizontal: 16,
+    paddingLeft: 68,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  divider: {
+    height: 1,
+    marginLeft: 68,
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowText: {
+    flex: 1,
+    gap: 4,
+  },
+  rowTitle: {
+    fontFamily: FONTS.bold,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  tag: {
+    fontFamily: FONTS.semiBold,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  why: {
+    fontFamily: FONTS.regular,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  stateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  state: {
+    fontFamily: FONTS.semiBold,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  pendingDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "#8A8580",
+    opacity: 0.5,
+  },
+  action: {
+    minHeight: 48,
+    minWidth: 88,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: RADIUS.sm,
+  },
+  actionLabel: {
+    fontFamily: FONTS.bold,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  checkAgain: {
+    fontFamily: FONTS.semiBold,
+    fontSize: 14,
+    fontWeight: "600",
+    textDecorationLine: "underline",
+    paddingVertical: 8,
+  },
+  notice: {
+    marginTop: 12,
+    textAlign: "center",
+    fontFamily: FONTS.semiBold,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  hint: {
+    marginTop: 12,
+    textAlign: "center",
+    ...TYPE.bodyMedium,
+  },
+  footer: {
+    marginTop: 24,
+    gap: 4,
+  },
+  primary: {
+    minHeight: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: RADIUS.sm,
+  },
+  disabled: {
+    opacity: 0.35,
+  },
+  primaryLabel: {
+    fontFamily: FONTS.bold,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  back: {
+    marginTop: 8,
+    textAlign: "center",
+    fontFamily: FONTS.semiBold,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+});

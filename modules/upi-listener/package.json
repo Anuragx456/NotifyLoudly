@@ -1,0 +1,11 @@
+{
+  "name": "upi-listener",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Expo module: UPI notification listener bridge (Android only)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "expo-modules-core": "*"
+  }
+}

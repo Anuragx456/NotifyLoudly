@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Transparent bg -->
+  <g transform="translate(412 512) rotate(-10) translate(-168 -315)">
+    <rect x="0" y="0" width="336" height="630" rx="62" ry="62" fill="#FFFFFF"/>
+    <rect x="20" y="44" width="296" height="542" rx="36" ry="36" fill="#000000"/>
+    <rect x="112" y="22" width="112" height="13" rx="6.5" ry="6.5" fill="#000000"/>
+    <g transform="translate(168 312)">
+      <text x="-1" y="26" text-anchor="middle" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="104" font-weight="900" font-style="italic" fill="#FFFFFF" letter-spacing="-4">UPI</text>
+      <g transform="translate(96 -32)">
+        <path d="M 16 2 L 50 34 L 16 66 L 4 66 L 38 34 L 4 2 Z" fill="#0AA14A"/>
+        <path d="M 0 2 L 34 34 L 0 66 L -12 66 L 22 34 L -12 2 Z" fill="#FF7A00"/>
+      </g>
+    </g>
+  </g>
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round">
+    <path d="M 689.0 439.2 A 95 95 0 0 1 689.0 584.8" stroke-width="30"/>
+    <path d="M 737.3 381.8 A 170 170 0 0 1 737.3 642.2" stroke-width="37"/>
+    <path d="M 791.2 303.2 A 265 265 0 0 1 791.2 720.8" stroke-width="42"/>
+  </g>
+</svg>

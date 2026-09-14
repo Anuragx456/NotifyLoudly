@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "NotifyLoudly",
+    "slug": "notifyloudly",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "notifyloudly",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.notifyloudly.notifyloudly",
+    "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "versionCode": 1
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "dark": {
+            "backgroundColor": "#000000",
+            "image": "./assets/images/splash-icon-dark.png"
+          },
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200
+        }
+      ],
+      "./plugins/withUpiListener.ts",
+      "./plugins/withAppSize.ts",
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "newArchEnabled": true,
+    "jsEngine": "hermes",
+    "ios": {
+      "bundleIdentifier": "com.notifyloudly.notifyloudly"
+    }
+  }
+}
