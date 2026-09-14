@@ -40,10 +40,11 @@ cannot test any of this — it has no native module. Tick each box by hand.
 - [ ] Settings → Payment pop-up → **Preview pop-up** shows the sample card.
 - [ ] With another app open (e.g. YouTube), send a test payment — the banner
       floats above it with amount + sender, and tapping it opens History.
-- [ ] With the phone locked, send a test payment — the full-screen card shows
-      on the lock screen (amount, sender, spoken text, Dismiss / View history).
+- [ ] With the phone locked, send a test payment — no card, no heads-up, no
+      shade entry appears; the payment is spoken aloud + vibrates only.
+      Unlocking shows no stale card.
 - [ ] With “Display over other apps” revoked, the banner stays hidden but the
-      heads-up alert + speech still fire (fallback works).
+      heads-up alert + speech still fire when unlocked (fallback works).
 - [ ] With the pop-up toggle off, no visual appears but speech + History still work.
 
 ## Play Store note
@@ -55,4 +56,4 @@ fallback (already implemented in `openBatteryExemptionRequest`).
 `SYSTEM_ALERT_WINDOW` (payment banner) is also sensitive: declare it with a
 demo video, or turn the pop-up toggle off-by-default path into notification-only
 mode. Do NOT add `USE_FULL_SCREEN_INTENT` — since Android 14 Play restricts it
-to calling/alarm apps; the lock-screen card uses `showWhenLocked` instead.
+to calling/alarm apps; locked phones get audio + vibration with no visual by design.

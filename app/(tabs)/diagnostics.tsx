@@ -6,7 +6,6 @@ import {
   addListenerConnectionListener,
   addUpiNotificationListener,
   areAlertNotificationsEnabled,
-  getAlertHealth,
   getListenerHeartbeat,
   getPendingNotifications,
   isListenerConnected,
@@ -16,7 +15,6 @@ import {
   isTtsReady,
   isTtsServiceRunning,
   openNotificationAccessSettings,
-  type AlertHealth,
   type ListenerHeartbeat,
   type UpiNotification,
 } from "upi-listener";
@@ -76,7 +74,6 @@ export default function DiagnosticsScreen() {
   const [heartbeat, setHeartbeat] = useState<ListenerHeartbeat | null>(null);
   const [overlayGranted, setOverlayGranted] = useState(false);
   const [notifAllowed, setNotifAllowed] = useState(false);
-  const [alertHealth, setAlertHealth] = useState<AlertHealth | null>(null);
   const [events, setEvents] = useState<UpiNotification[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
@@ -117,11 +114,6 @@ export default function DiagnosticsScreen() {
       setNotifAllowed(areAlertNotificationsEnabled());
     } catch {
       setNotifAllowed(false);
-    }
-    try {
-      setAlertHealth(getAlertHealth());
-    } catch {
-      setAlertHealth(null);
     }
   }, []);
 
@@ -168,23 +160,9 @@ export default function DiagnosticsScreen() {
             <StateRow label="Last callback" value={ageLine(heartbeat)} good={(heartbeat?.lastCallbackAtMs ?? 0) > 0} />
             <StateRow label="Overlay banner" value={overlayGranted ? "Can draw" : "Not allowed"} good={overlayGranted} />
             <StateRow label="Heads-up (fallback)" value={notifAllowed ? "Allowed" : "Not allowed"} good={notifAllowed} />
-            <StateRow
-              label="Lockscreen card"
-              value={
-                !notifAllowed
-                  ? "Blocked — notifications off"
-                  : alertHealth?.channelBlocked
-                    ? "Blocked — channel silenced"
-                    : !alertHealth || alertHealth.fullScreenAllowed
-                      ? "Ready — full-screen intent"
-                      : "Blocked — full-screen intent off"
-              }
-              good={
-                notifAllowed &&
-                !alertHealth?.channelBlocked &&
-                (alertHealth == null || alertHealth.fullScreenAllowed)
-              }
-            />
+            <Text style={[styles.notice, { color: theme.faint }]}>
+              Locked phone: announced aloud + vibrates, no visual by design.
+            </Text>
 
             <Text style={[styles.section, { color: theme.muted }]}>Permission</Text>
             <StateRow

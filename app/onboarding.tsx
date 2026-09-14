@@ -4,14 +4,10 @@ import { Link, useFocusEffect, useRouter } from "expo-router";
 import {
   addListenerConnectionListener,
   areAlertNotificationsEnabled,
-  isIgnoringBatteryOptimizations,
   isListenerConnected,
   isNativeModuleAvailable,
   isNotificationAccessEnabled,
-  isOverlayAccessGranted,
-  openBatteryExemptionRequest,
   openNotificationAccessSettings,
-  openOverlayAccessSettings,
   requestAlertNotifications,
   requestListenerRebind,
 } from "upi-listener";
@@ -27,8 +23,6 @@ export default function OnboardingScreen() {
   const [granted, setGranted] = useState(false);
   const [connected, setConnected] = useState(false);
   const [notifAllowed, setNotifAllowed] = useState(false);
-  const [overlayGranted, setOverlayGranted] = useState(false);
-  const [exempt, setExempt] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [rebindAsked, setRebindAsked] = useState(false);
   const [rebindFailed, setRebindFailed] = useState(false);
@@ -50,16 +44,6 @@ export default function OnboardingScreen() {
       setNotifAllowed(areAlertNotificationsEnabled());
     } catch {
       setNotifAllowed(false);
-    }
-    try {
-      setOverlayGranted(isOverlayAccessGranted());
-    } catch {
-      setOverlayGranted(false);
-    }
-    try {
-      setExempt(isIgnoringBatteryOptimizations());
-    } catch {
-      setExempt(false);
     }
   }, []);
 
@@ -124,18 +108,14 @@ export default function OnboardingScreen() {
     return () => clearTimeout(timer);
   }, [granted, connected, rebindAsked, recheck]);
 
-  const readyCount =
-    (granted ? 1 : 0) +
-    (notifAllowed ? 1 : 0) +
-    (overlayGranted ? 1 : 0) +
-    (exempt ? 1 : 0);
+  const readyCount = (granted ? 1 : 0) + (notifAllowed ? 1 : 0);
 
-  const overallTone = !granted ? "bad" : readyCount === 4 ? "good" : "neutral";
+  const overallTone = !granted ? "bad" : readyCount === 2 ? "good" : "neutral";
   const overallLabel = !granted
     ? "Not ready"
-    : readyCount === 4
+    : readyCount === 2
       ? "All set"
-      : `${readyCount} of 4 ready`;
+      : `${readyCount} of 2 ready`;
   const overallDot =
     overallTone === "good" ? theme.green : overallTone === "bad" ? theme.red : theme.muted;
   const overallText =
@@ -179,31 +159,6 @@ export default function OnboardingScreen() {
       setNotice("Notification request unavailable on this build.");
     }
   }, [recheck, router]);
-
-  const onGrantOverlay = useCallback(async () => {
-    if (!(await ensureDisclosureOrRedirect(router))) return;
-    setNotice(null);
-    try {
-      if (!openOverlayAccessSettings()) {
-        setNotice("Couldn't open it — allow “Display over other apps” in Settings.");
-        return;
-      }
-      setNotice("Allow “Display over other apps”, then come back.");
-    } catch {
-      setNotice("Overlay settings unavailable on this build.");
-    }
-  }, [router]);
-
-  const onRequestExemption = useCallback(async () => {
-    if (!(await ensureDisclosureOrRedirect(router))) return;
-    setNotice(null);
-    try {
-      const opened = openBatteryExemptionRequest();
-      if (!opened) setNotice("Couldn't open battery settings on this build.");
-    } catch {
-      setNotice("Battery request unavailable on this build.");
-    }
-  }, [router]);
 
   const renderState = (on: boolean, pendingLabel?: string) => (
     <View style={styles.stateRow}>
@@ -258,15 +213,19 @@ export default function OnboardingScreen() {
           <Text style={[styles.title, { color: theme.ink }]}>Turn on listening.</Text>
           <Text style={[styles.sub, { color: theme.muted }]}>
             {!granted
-              ? "One allow starts announcements."
-              : readyCount === 4
+              ? "Step 1 of 2 — without this, nothing speaks."
+              : readyCount === 2
                 ? "Everything's on."
-                : "One starts it. The rest keep it loud."}
+                : "One more step to go."}
           </Text>
           <View style={styles.overall}>
             <View style={[styles.dot, { backgroundColor: overallDot }]} />
             <Text style={[styles.overallLabel, { color: overallText }]}>{overallLabel}</Text>
           </View>
+          <Text style={[styles.subNote, { color: theme.muted }]}>
+            Just these two — announcements start speaking. Everything else
+            (pop-up banner, overnight stay-alive) is optional later in Settings.
+          </Text>
         </View>
 
         {!isNativeModuleAvailable() && (
@@ -276,7 +235,7 @@ export default function OnboardingScreen() {
         )}
 
         <View style={[styles.list, { borderColor: theme.line, backgroundColor: theme.card }]}>
-          {/* Hear payments — required */}
+          {/* 1 · Hear payments — required */}
           <View style={styles.rowWrap}>
             <View style={styles.row}>
               <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
@@ -284,7 +243,7 @@ export default function OnboardingScreen() {
               </View>
               <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, { color: theme.ink }]}>
-                  Hear payments <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
+                  1 · Hear payments <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
                 </Text>
                 {granted && !connected
                   ? (
@@ -293,7 +252,10 @@ export default function OnboardingScreen() {
                   : renderState(granted)}
                 {!granted && (
                   <Text style={[styles.why, { color: theme.muted }]}>
-                    Without this, nothing speaks.
+                    Lets NotifyLoudly read UPI payment notifications and speak
+                    them aloud.{"\n"}
+                    Settings → Notifications → Advanced → Special app access →
+                    Notification access → turn on NotifyLoudly.
                   </Text>
                 )}
               </View>
@@ -316,7 +278,7 @@ export default function OnboardingScreen() {
                 )}
                 {!granted && (
                   <Pressable onPress={recheck} accessibilityRole="button" hitSlop={12}>
-                    <Text style={[styles.checkAgain, { color: theme.ink }]}>Check again</Text>
+                    <Text style={[styles.checkAgain, { color: theme.ink }]}>I've turned it on — check again</Text>
                   </Pressable>
                 )}
               </View>
@@ -325,58 +287,36 @@ export default function OnboardingScreen() {
 
           <View style={[styles.divider, { backgroundColor: theme.line }]} />
 
-          {/* Show pop-up — required */}
-          <View style={styles.row}>
-            <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
-              <Ionicons name="alert-circle-outline" size={20} color={theme.ink} />
+          {/* 2 · Show pop-up — required */}
+          <View style={styles.rowWrap}>
+            <View style={styles.row}>
+              <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
+                <Ionicons name="alert-circle-outline" size={20} color={theme.ink} />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, { color: theme.ink }]}>
+                  2 · Show pop-up <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
+                </Text>
+                {renderState(notifAllowed)}
+                {!notifAllowed && (
+                  <Text style={[styles.why, { color: theme.muted }]}>
+                    Posts a payment card when unlocked (never on the lock
+                    screen).{"\n"}
+                    Tap Allow → tap Allow on the system prompt.
+                  </Text>
+                )}
+              </View>
+              {notifAllowed
+                ? renderDone("Pop-up alerts on")
+                : renderAction("Allow", onGrantNotif, "Allow notifications")}
             </View>
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: theme.ink }]}>
-                Show pop-up <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
-              </Text>
-              {renderState(notifAllowed)}
-            </View>
-            {notifAllowed
-              ? renderDone("Pop-up alerts on")
-              : renderAction("Allow", onGrantNotif, "Allow notifications")}
-          </View>
-
-          <View style={[styles.divider, { backgroundColor: theme.line }]} />
-
-          {/* Float on top — optional */}
-          <View style={styles.row}>
-            <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
-              <Ionicons name="layers-outline" size={20} color={theme.ink} />
-            </View>
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: theme.ink }]}>
-                Float on top <Text style={[styles.tag, { color: theme.muted }]}>· Optional</Text>
-              </Text>
-              {renderState(overlayGranted)}
-            </View>
-            {overlayGranted
-              ? renderDone("Display over apps on")
-              : renderAction("Allow", onGrantOverlay, "Allow display over apps")}
-          </View>
-
-          <View style={[styles.divider, { backgroundColor: theme.line }]} />
-
-          {/* Stay on overnight — recommended */}
-          <View style={styles.row}>
-            <View style={[styles.iconWrap, { backgroundColor: theme.accentSoft }]}>
-              <Ionicons name="battery-charging-outline" size={20} color={theme.ink} />
-            </View>
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: theme.ink }]}>
-                Stay on overnight <Text style={[styles.tag, { color: theme.muted }]}>· Suggested</Text>
-              </Text>
-              {renderState(exempt)}
-            </View>
-            {exempt
-              ? renderDone("Battery exemption on")
-              : renderAction("Allow", onRequestExemption, "Allow battery exemption")}
           </View>
         </View>
+
+        <Text style={[styles.footnote, { color: theme.muted }]}>
+          Float-on-top banner and overnight stay-alive are optional — find them
+          in Settings and Stay-alive after setup.
+        </Text>
 
         {notice && <Text style={[styles.notice, { color: theme.red }]}>{notice}</Text>}
 
@@ -439,6 +379,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
     ...TYPE.bodyLarge,
+  },
+  subNote: {
+    marginTop: 8,
+    textAlign: "center",
+    ...TYPE.bodyMedium,
   },
   overall: {
     marginTop: 12,
@@ -507,6 +452,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   why: {
+    fontFamily: FONTS.regular,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  footnote: {
+    marginTop: 12,
+    textAlign: "center",
     fontFamily: FONTS.regular,
     fontSize: 13,
     lineHeight: 18,

@@ -21,9 +21,8 @@ explicit consent (in-app disclosure → system grant), it uses:
 | Access | Why |
 |--------|-----|
 | Notification listener (`BIND_NOTIFICATION_LISTENER_SERVICE`) | Reads the **title and body** of notifications from your UPI and bank apps, extracts amount + sender, speaks it aloud. **UPI payment notifications only** — no other notification content is used. |
-| Notifications (`POST_NOTIFICATIONS`) | Fallback heads-up payment alert when the banner/overlay is off. |
-| Display over other apps (`SYSTEM_ALERT_WINDOW`, optional) | Overlay banner that floats the payment card above any open app. |
-| Full-screen intent (`USE_FULL_SCREEN_INTENT`, sideload builds only) | Lock-screen payment card. Play builds fall back to `showWhenLocked`. |
+| Notifications (`POST_NOTIFICATIONS`) | Fallback heads-up payment alert when unlocked and the banner/overlay is off. Hidden from the lock screen. |
+| Display over other apps (`SYSTEM_ALERT_WINDOW`, optional) | Overlay banner that floats the payment card above any open app when unlocked. |
 | Battery exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, suggested) | Stops Doze mode from pausing the speech service overnight. |
 | Run at boot (`RECEIVE_BOOT_COMPLETED`) | Re-starts the speech service and re-binds the listener after reboot or app update. |
 | Foreground service (`FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK`) | Keeps the speech service alive while announcing. |

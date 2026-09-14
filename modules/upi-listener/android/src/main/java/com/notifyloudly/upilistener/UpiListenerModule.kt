@@ -265,8 +265,6 @@ class UpiListenerModule : Module() {
         "notificationsEnabled" to false,
         "channelImportance" to -1,
         "channelBlocked" to true,
-        "fullScreenAllowed" to false,
-        "deviceLocked" to false,
       )
       try {
         val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
@@ -283,36 +281,16 @@ class UpiListenerModule : Module() {
           } catch (_: Exception) {
           }
         }
-        // Full-screen-intent gate (Android 14+ revocable under Special app
-        // access → Manage full-screen intents). Below 34 there is no user
-        // toggle — treat as allowed so the row only warns where actionable.
-        var fullScreenAllowed = true
-        if (Build.VERSION.SDK_INT >= 34) {
-          try {
-            val manager = context.getSystemService(android.app.NotificationManager::class.java)
-            fullScreenAllowed = manager?.canUseFullScreenIntent() ?: true
-          } catch (_: Exception) {
-          }
-        }
-        val locked = try {
-          PaymentAlertManager.isLocked(context)
-        } catch (_: Exception) {
-          false
-        }
         mapOf(
           "notificationsEnabled" to notificationsEnabled,
           "channelImportance" to importance,
           "channelBlocked" to channelBlocked,
-          "fullScreenAllowed" to fullScreenAllowed,
-          "deviceLocked" to locked,
         )
       } catch (_: Exception) {
         mapOf(
           "notificationsEnabled" to false,
           "channelImportance" to -1,
           "channelBlocked" to true,
-          "fullScreenAllowed" to false,
-          "deviceLocked" to false,
         )
       }
     }

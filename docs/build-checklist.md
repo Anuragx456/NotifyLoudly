@@ -68,11 +68,10 @@ emulator, Bun installed.
 - [ ] **Play-safe permission strip**: `QUERY_ALL_PACKAGES` is hard-deleted
       from both sources (`modules/upi-listener` manifest +
       `plugins/withUpiListener.ts` unconditional strip) — confirm absent in
-      `android/app/src/main/AndroidManifest.xml` on every build. Build with
-      `PLAY_STORE_BUILD=1` so the plugin additionally strips sideload-only
-      `USE_FULL_SCREEN_INTENT`, then confirm it is absent too. Sideload builds
-      (default) keep FSI; Play builds fall back to `showWhenLocked` and the
-      `<queries>` block covers the 23 allowlisted UPI packages.
+      `android/app/src/main/AndroidManifest.xml` on every build.
+      `USE_FULL_SCREEN_INTENT` is likewise hard-deleted with the lock-screen
+      visual path (locked = audio + vibration only) — confirm absent too.
+      The `<queries>` block covers the 23 allowlisted UPI packages.
 - [ ] **Sensitive-permission video**: record disclosure → consent → system grant →
       test announcement → History, per the declaration form requirements.
 - [ ] Target API level and 16 KB page-size compliance per current Play policy.

@@ -611,7 +611,7 @@ export default function SettingsScreen() {
             <Text style={[styles.rowLabel, { color: theme.ink }]}>Notifications</Text>
             <Text style={[styles.rowHint, { color: theme.muted }]}>
               {notifAllowed
-                ? "Allowed — heads-up alert will appear on lock screen"
+                ? "Allowed — heads-up alert appears when unlocked"
                 : "Not allowed — heads-up alert cannot appear"}
             </Text>
           </View>
@@ -657,7 +657,7 @@ export default function SettingsScreen() {
       <View style={[styles.card, { borderColor: theme.line, backgroundColor: theme.card }]}>
         <ToggleRow
           label="Show payment pop-up"
-          hint="Banner over any open app + full card on lock screen. Heads-up alert always shows even when this is off."
+          hint="Banner over any open app when unlocked. Locked phone always announces audio-only. Heads-up alert always shows when unlocked even when this is off."
           value={settings.overlayEnabled}
           onToggle={onOverlayToggle}
         />

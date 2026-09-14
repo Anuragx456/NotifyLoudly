@@ -4,27 +4,21 @@ const LISTENER_SERVICE =
   "com.notifyloudly.upilistener.UpiNotificationListenerService";
 const TTS_SERVICE = "com.notifyloudly.upilistener.UpiTtsService";
 const BOOT_RECEIVER = "com.notifyloudly.upilistener.UpiBootReceiver";
-const ALERT_ACTIVITY = "com.notifyloudly.upilistener.PaymentAlertActivity";
 
 // Allowlist authority: src/components/upiApps.ts (UPI_APPS, 23 entries).
 // Keep this <queries> package list + AndroidManifest.xml + UpiListenerStore
 // KNOWN_UPI_PACKAGES + DEFAULT_UPI_PACKAGES + APP_NAMES in sync with it.
 // com.whatsapp is intentionally excluded: it appears in no parser table.
 //
-// Play-safe path (Option A): sideload manifest stays as-is by default.
-// Set PLAY_STORE_BUILD=1 for a Play upload build — the sideload-only
-// permission below is then stripped. See docs/build-checklist.md checkbox.
+// NOTE: QUERY_ALL_PACKAGES was hard-deleted. It was the top Play Protect /
+// Play review flag, and the <queries> block below (23 allowlisted UPI
+// packages + upi intents) is the sole, sufficient visibility mechanism. Any
+// residual declaration (e.g. from a third-party dep) is still stripped
+// unconditionally in the manifest hook below. USE_FULL_SCREEN_INTENT was
+// likewise hard-deleted with the lock-screen visual path (locked devices get
+// audio + vibration only) — no Play flavor split remains.
 //
-// NOTE: QUERY_ALL_PACKAGES was hard-deleted (not sideload-only). It was the
-// top Play Protect / Play review flag, and the <queries> block below (23
-// allowlisted UPI packages + upi intents) is the sole, sufficient visibility
-// mechanism. Any residual declaration (e.g. from a third-party dep) is still
-// stripped unconditionally in the manifest hook below.
-const PLAY_STORE_BUILD =
-  process.env.PLAY_STORE_BUILD === "1" ||
-  process.env.PLAY_STORE_BUILD === "true";
-
-// Banned in every build flavor — stripped unconditionally, never injected.
+// Banned in every build — stripped unconditionally, never injected.
 const BANNED_PERMISSIONS = ["android.permission.QUERY_ALL_PACKAGES"];
 
 const REQUIRED_PERMISSIONS = [
@@ -42,27 +36,14 @@ const REQUIRED_PERMISSIONS = [
   "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
 ];
 
-const SIDELOAD_ONLY_PERMISSIONS = [
-  // Lock-screen full-screen card (A). Lets the heads-up notification's
-  // full-screen intent legally launch PaymentAlertActivity over the keyguard
-  // from the background on Android 14+. Install-time grant for sideloaded
-  // apps; the user can revoke it under Special app access → Manage
-  // full-screen intents.
-  // Play restricts this to calling/alarm apps and rejects other uploads
-  // declaring it — stripped when PLAY_STORE_BUILD=1.
-  "android.permission.USE_FULL_SCREEN_INTENT",
-];
-
 const withUpiListener: ConfigPlugin = (config) => {
   return withAndroidManifest(config, (config) => {
     const manifest = config.modResults.manifest;
 
-    const expectedPermissions = PLAY_STORE_BUILD
-      ? REQUIRED_PERMISSIONS
-      : [...REQUIRED_PERMISSIONS, ...SIDELOAD_ONLY_PERMISSIONS];
-    // Unconditional: banned permissions never survive, in any flavor —
+    const expectedPermissions = REQUIRED_PERMISSIONS;
+    // Unconditional: banned permissions never survive —
     // covers our own sources and any third-party dep that declares them.
-    const stripped = PLAY_STORE_BUILD ? [...SIDELOAD_ONLY_PERMISSIONS, ...BANNED_PERMISSIONS] : [...BANNED_PERMISSIONS];
+    const stripped = BANNED_PERMISSIONS;
     let usesPermissions = (manifest["uses-permission"] ?? []).filter(
       (entry) => !stripped.includes(entry.$?.["android:name"]),
     );
@@ -185,24 +166,6 @@ const withUpiListener: ConfigPlugin = (config) => {
     }
     application.receiver = receivers;
 
-    const activities = application.activity ?? [];
-    const hasActivity = (name: string) =>
-      activities.some((activity) => activity.$?.["android:name"] === name);
-
-    if (!hasActivity(ALERT_ACTIVITY)) {
-      activities.push({
-        $: {
-          "android:name": ALERT_ACTIVITY,
-          "android:exported": "false",
-          "android:launchMode": "singleInstance",
-          "android:excludeFromRecents": "true",
-          "android:noHistory": "true",
-          "android:showWhenLocked": "true",
-          "android:turnScreenOn": "true",
-        },
-      });
-    }
-    application.activity = activities;
     return config;
   });
 };

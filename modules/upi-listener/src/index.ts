@@ -50,8 +50,6 @@ export interface AlertHealth {
   notificationsEnabled: boolean;
   channelImportance: number;
   channelBlocked: boolean;
-  fullScreenAllowed: boolean;
-  deviceLocked: boolean;
 }
 
 export interface SelfTestResult {

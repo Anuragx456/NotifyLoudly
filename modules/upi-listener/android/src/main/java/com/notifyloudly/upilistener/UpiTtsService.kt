@@ -111,9 +111,10 @@ class UpiTtsService : Service() {
     ): Boolean {
       val pending = Pending(text, postedAt, receivedElapsed, source, amountPaise, sender, appName, sourcePackage)
       if (source == "notification" && amountPaise > 0) {
-        // Visual payment prompt alongside the spoken announcement. Runs
-        // here (not in JS) so it fires even when the app was never opened,
-        // e.g. right after boot. Test/self-test speech never shows it.
+        // Unlocked-only visual alongside the spoken announcement; locked
+        // devices get audio + vibration only. Runs here (not in JS) so it
+        // fires even when the app was never opened, e.g. right after boot.
+        // Test/self-test speech never shows it.
         try {
           PaymentAlertManager.showAlert(
             context,

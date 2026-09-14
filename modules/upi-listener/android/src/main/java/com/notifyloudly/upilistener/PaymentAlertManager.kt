@@ -33,18 +33,17 @@ import androidx.core.app.NotificationManagerCompat
  * Visual payment prompt shown alongside the spoken announcement.
  *
  * Routing (decided natively so it works when JS is not running):
- * - Always: high-priority heads-up notification (C) with View/Dismiss — never gated by overlay toggle.
- * - Device locked: full-screen [PaymentAlertActivity] (A) — also never gated
- *   by the overlay toggle; it is a notification-path surface, not the banner.
- * - Device unlocked + toggle on + overlay access granted: floating banner (B).
- * - Device unlocked without overlay access (or toggle off): notification only (C).
+ * - Device locked: NO visual at all — vibrate only; TTS audio continues from
+ *   [UpiTtsService]. No heads-up, no full-screen card, no shade entry.
+ * - Device unlocked: high-priority heads-up notification (never gated by
+ *   overlay toggle) with View/Dismiss.
+ * - Device unlocked + toggle on + overlay access granted: floating banner.
+ * - Device unlocked without overlay access (or toggle off): notification only.
  *
- * USE_FULL_SCREEN_INTENT is declared in the manifest (sideload-only; must be
- * removed before any Play upload — Play restricts it to calling/alarm apps).
- * The full-screen intent on the heads-up notification is the legal way to
- * launch the activity over the keyguard from the background on Android 10+;
- * the direct startActivity call stays as a fallback for older versions where
- * background activity starts are still allowed.
+ * There is deliberately no full-screen intent and no lock-screen activity:
+ * USE_FULL_SCREEN_INTENT is not declared, so there is no Play-review surface
+ * for it. postHeadsUp() is unlocked-only; lingering unlocked notifications are
+ * hidden from the lockscreen via VISIBILITY_SECRET.
  */
 object PaymentAlertManager {
   private const val TAG = "UpiAlert"
@@ -93,8 +92,20 @@ object PaymentAlertManager {
       UpiListenerStore.ensureSettingsLoaded(app)
     } catch (_: Exception) {
     }
-    // Heads-up is the always-on fallback — never gated by overlayEnabled so
-    // merchant who disables the banner still sees a notification + hears TTS.
+    // Locked = silent audio only. No heads-up, no full-screen card, no shade
+    // entry — vibrate only; TTS audio continues independently in UpiTtsService.
+    if (isLocked(app)) {
+      try {
+        vibrateBriefly(app)
+      } catch (e: Exception) {
+        Log.w(TAG, "haptic failed: ${e.message}")
+      }
+      Log.i(TAG, "locked — visual suppressed, TTS continues")
+      return
+    }
+    // Heads-up is the always-on unlocked fallback — never gated by
+    // overlayEnabled so a merchant who disables the banner still sees a
+    // notification + hears TTS.
     try {
       postHeadsUp(app, data)
     } catch (e: Exception) {
@@ -104,17 +115,6 @@ object PaymentAlertManager {
       vibrateBriefly(app)
     } catch (e: Exception) {
       Log.w(TAG, "haptic failed: ${e.message}")
-    }
-    // The locked full-screen card is a notification-path surface, NOT the
-    // floating banner — it must fire even when the user turned the banner
-    // toggle off. Only the unlocked banner below is gated by overlayEnabled.
-    if (isLocked(app)) {
-      try {
-        launchAlertActivity(app, data)
-      } catch (e: Exception) {
-        Log.w(TAG, "visual alert failed: ${e.message}")
-      }
-      return
     }
     if (!UpiListenerStore.overlayEnabled) return
     try {
@@ -148,10 +148,6 @@ object PaymentAlertManager {
     }
     try {
       NotificationManagerCompat.from(app).cancel(ALERT_NOTIF_ID)
-    } catch (_: Exception) {
-    }
-    try {
-      PaymentAlertActivity.finishCurrent()
     } catch (_: Exception) {
     }
   }
@@ -196,32 +192,6 @@ object PaymentAlertManager {
     }
   }
 
-  private fun alertActivityIntent(app: Context, data: AlertData): Intent {
-    return Intent(app, PaymentAlertActivity::class.java).apply {
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-      putExtra(PaymentAlertActivity.EXTRA_AMOUNT, formatINR(data.amountPaise))
-      putExtra(PaymentAlertActivity.EXTRA_SENDER, data.sender ?: "")
-      putExtra(PaymentAlertActivity.EXTRA_APP, data.appName)
-      putExtra(PaymentAlertActivity.EXTRA_TEXT, data.speechText)
-      putExtra(PaymentAlertActivity.EXTRA_POSTED_AT, data.postedAt)
-    }
-  }
-
-  private fun launchAlertActivity(app: Context, data: AlertData) {
-    // Background activity starts are blocked on Android 10+ (Q); the
-    // full-screen intent on the heads-up notification is the legal path
-    // there. Keep the direct start only for older versions.
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      Log.i(TAG, "fsi-path — direct start skipped on Q+, full-screen intent carries the lockscreen card")
-      return
-    }
-    try {
-      app.startActivity(alertActivityIntent(app, data))
-    } catch (e: Exception) {
-      Log.w(TAG, "legacy-direct-failed: ${e.message}")
-    }
-  }
-
   private fun historyIntent(app: Context): Intent {
     return try {
       Intent(Intent.ACTION_VIEW, Uri.parse(HISTORY_DEEP_LINK)).apply {
@@ -246,10 +216,14 @@ object PaymentAlertManager {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val manager = app.getSystemService(NotificationManager::class.java) ?: return
     // Channels persist across updates: an install that created this channel
-    // at lower importance would silently pin every later heads-up (and its
-    // full-screen intent) to the old level. Recreate it to enforce HIGH.
+    // at lower importance or with lockscreen visibility would silently pin
+    // every later heads-up to the old level. Recreate to enforce HIGH +
+    // SECRET (unlocked-only; never shown on the lockscreen).
     val existing = manager.getNotificationChannel(ALERT_CHANNEL_ID)
-    if (existing != null && existing.importance < NotificationManager.IMPORTANCE_HIGH) {
+    if (existing != null &&
+      (existing.importance < NotificationManager.IMPORTANCE_HIGH ||
+        existing.lockscreenVisibility != android.app.Notification.VISIBILITY_SECRET)
+    ) {
       try {
         manager.deleteNotificationChannel(ALERT_CHANNEL_ID)
       } catch (_: Exception) {
@@ -264,7 +238,7 @@ object PaymentAlertManager {
         ).apply {
           description = "Heads-up card for each announced UPI payment"
           enableVibration(true)
-          lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+          lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
         },
       )
     }
@@ -272,8 +246,8 @@ object PaymentAlertManager {
 
   private fun paymentSalt(data: AlertData): Int {
     // Distinct PendingIntent request codes per payment so a second payment
-    // re-triggers heads-up / full-screen intent instead of silently updating
-    // the first notification (fixed codes + FLAG_UPDATE_CURRENT coalesced).
+    // re-triggers heads-up instead of silently updating the first
+    // notification (fixed codes + FLAG_UPDATE_CURRENT coalesced).
     var h = (data.postedAt xor data.amountPaise).toInt()
     h = h * 31 + (data.sender?.hashCode() ?: 0)
     h = h * 31 + data.speechText.hashCode()
@@ -288,15 +262,8 @@ object PaymentAlertManager {
     ensureChannel(app)
     val amount = formatINR(data.amountPaise)
     val senderBit = if (data.sender.isNullOrBlank()) "" else " from ${data.sender}"
-    val locked = isLocked(app)
     val salt = paymentSalt(data)
 
-    val fullScreen = PendingIntent.getActivity(
-      app,
-      2_000_000 + salt,
-      alertActivityIntent(app, data),
-      immutableFlags(PendingIntent.FLAG_UPDATE_CURRENT),
-    )
     val viewPending = PendingIntent.getActivity(
       app,
       3_000_000 + salt,
@@ -316,26 +283,24 @@ object PaymentAlertManager {
       .setStyle(NotificationCompat.BigTextStyle().bigText("“${data.speechText}”"))
       .setPriority(NotificationCompat.PRIORITY_HIGH)
       .setCategory(NotificationCompat.CATEGORY_ALARM)
-      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      .setVisibility(NotificationCompat.VISIBILITY_SECRET)
       .setAutoCancel(true)
       .setTimeoutAfter(25_000L)
       .setColor(GREEN)
       .setContentIntent(viewPending)
-      .setFullScreenIntent(fullScreen, locked)
       .addAction(0, "View", viewPending)
       .addAction(0, "Dismiss", dismissPending)
       .build()
-    // Cancel-then-notify so a rapid second payment re-fires heads-up and the
-    // full-screen intent instead of an in-place update that the system may
-    // not surface on the lockscreen. Single visible card is preserved: the
-    // old one is gone before the new one posts.
+    // Cancel-then-notify so a rapid second payment re-fires heads-up instead
+    // of an in-place update the system may not surface. Single visible card
+    // is preserved: the old one is gone before the new one posts.
     val notifs = NotificationManagerCompat.from(app)
     try {
       notifs.cancel(ALERT_NOTIF_ID)
     } catch (_: Exception) {
     }
     notifs.notify(ALERT_NOTIF_ID, notification)
-    Log.i(TAG, "heads-up posted locked=$locked salt=$salt amount=$amount")
+    Log.i(TAG, "heads-up posted salt=$salt amount=$amount")
   }
 
   private fun dp(view: View, value: Int): Int {
