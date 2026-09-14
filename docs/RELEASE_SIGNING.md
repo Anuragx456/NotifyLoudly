@@ -17,8 +17,10 @@ keytool -genkeypair -v -storetype JKS \
 
 ## 2. Wire signing for release builds
 
-After each `npx expo prebuild --clean`, patch `android/app/build.gradle` so
-`buildTypes.release` uses `signingConfigs.release`:
+Signing is wired durably by `plugins/withReleaseSigning.ts` (registered in
+`app.json` `plugins`), which injects `signingConfigs.release` into
+`android/app/build.gradle` via `withAppBuildGradle` on every prebuild — no
+manual patching after `prebuild --clean`:
 
 ```gradle
 signingConfigs {
@@ -57,11 +59,6 @@ If the properties are absent, `signingConfigs.release` is left empty and
 `assembleRelease`/`bundleRelease` will fail at signing — this is intentional
 (we prefer a hard failure over silently shipping a `debug`-signed release).
 
-> Follow-up: move this patch into a config plugin (e.g.
-> `plugins/withReleaseSigning.ts` via `withAppBuildGradle`) so it survives
-> `prebuild --clean` without manual re-application. Until then, re-apply the
-> block after every clean prebuild.
-
 ## 3. Version contract
 
 * Bump `expo.version` and `expo.android.versionCode` in `app.json` for every
@@ -75,8 +72,7 @@ If the properties are absent, `signingConfigs.release` is left empty and
 
 ```bash
 bun run typecheck && bun test
-npx expo prebuild --clean --platform android   # regenerate android/
-# re-apply the signingConfigs.release patch if you cleaned
+npx expo prebuild --clean --platform android   # regenerate android/ (withReleaseSigning plugin injects signingConfigs.release)
 ./gradlew -p android assembleRelease            # APK
 ./gradlew -p android bundleRelease              # AAB (for Play, when needed)
 apksigner verify --print-certs android/app/build/outputs/bundle/release/app-release.aab

@@ -1,14 +1,20 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
+import { PRIVACY_POLICY_URL } from "@/components/privacy";
+import { setDisclosureSeen } from "@/store/onboarding";
 
 export default function DisclosureScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
+  // "Not now" dismisses without consent. Stay on this screen (never mount the
+  // tab bar pre-consent) — show a reminder instead of flashing Home.
+  const [declined, setDeclined] = useState(false);
 
   return (
     <View style={[styles.root, { backgroundColor: theme.paper }]}>
@@ -36,35 +42,62 @@ export default function DisclosureScreen() {
             Your counter phone speaks each UPI payment aloud.
           </Text>
           <Text style={[styles.micro, { color: theme.muted }]}>
-            To do this, NotifyLoudly reads notification text (title and body)
-            from your UPI and bank apps, extracts the payment amount and sender,
-            and speaks it aloud.{"\n\n"}
-            UPI payment notifications only — no other notifications are used.
-            Amount, sender, app and time are stored offline in on-device storage
-            only. No upload, no account, no analytics.{"\n\n"}
+            To do this, NotifyLoudly asks for the following access —{"\n\n"}
+            · Notification access: reads notification text (title and body)
+            from your UPI and bank apps, extracts the payment amount and
+            sender, and speaks it aloud. UPI payment notifications only — no
+            other notifications are used.{"\n\n"}
+            · Show pop-up: posts a heads-up payment alert (notifications
+            permission).{"\n\n"}
+            · Float on top (optional): draws the payment banner over any open
+            app.{"\n\n"}
+            · Stay on overnight (suggested): ignores battery optimizations so
+            Doze mode doesn't pause announcements.{"\n\n"}
+            · Restart after reboot: re-starts the speech service and re-binds
+            listening automatically when the phone boots or the app updates.{"\n\n"}
+            · Speech service: runs in the foreground while announcing so
+            payments speak even when the app is in the background.{"\n\n"}
+            Amount, sender, app and time are stored offline in on-device
+            storage only. No upload, no account, no analytics.{"\n\n"}
             Tap Continue to consent and turn on notification access in the next
             step.
           </Text>
+          <Pressable
+            onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+            accessibilityRole="link"
+            accessibilityLabel="Read the privacy policy"
+          >
+            <Text style={[styles.privacyLink, { color: theme.ink }]}>
+              Read the privacy policy
+            </Text>
+          </Pressable>
         </View>
 
         <View style={styles.footer}>
           <Pressable
             style={[styles.primary, { backgroundColor: theme.ink }]}
-            onPress={() => router.replace("/onboarding")}
+            onPress={async () => {
+              await setDisclosureSeen();
+              router.replace("/onboarding");
+            }}
             accessibilityRole="button"
             accessibilityLabel="Continue to setup"
           >
             <Text style={[styles.primaryLabel, { color: theme.paper }]}>Continue</Text>
           </Pressable>
-          <Link href="/" asChild>
-            <Pressable
-              style={styles.secondary}
-              accessibilityRole="button"
-              accessibilityLabel="Not now"
-            >
-              <Text style={[styles.secondaryLabel, { color: theme.muted }]}>Not now</Text>
-            </Pressable>
-          </Link>
+          <Pressable
+            style={styles.secondary}
+            accessibilityRole="button"
+            accessibilityLabel="Not now"
+            onPress={() => setDeclined(true)}
+          >
+            <Text style={[styles.secondaryLabel, { color: theme.muted }]}>Not now</Text>
+          </Pressable>
+          {declined && (
+            <Text style={[styles.declineHint, { color: theme.muted }]}>
+              Nothing turns on until you tap Continue — announcements stay off.
+            </Text>
+          )}
         </View>
       </ScrollView>
       <StatusBar style={theme.statusBar} />
@@ -117,6 +150,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 18,
   },
+  privacyLink: {
+    marginTop: 12,
+    textAlign: "center",
+    fontFamily: FONTS.semiBold,
+    fontSize: 14,
+    fontWeight: "600",
+    textDecorationLine: "underline",
+  },
   footer: {
     gap: 4,
   },
@@ -140,5 +181,12 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.semiBold,
     fontSize: 16,
     fontWeight: "600",
+  },
+  declineHint: {
+    marginTop: 8,
+    textAlign: "center",
+    fontFamily: FONTS.regular,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

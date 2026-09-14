@@ -1,6 +1,8 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-  <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesCondition"/>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- NOTE: no QUERY_ALL_PACKAGES here — the <queries> block below (23
+       allowlisted UPI packages + upi intents) is the sole visibility
+       mechanism. The broad permission is a Play Protect / Play review flag
+       with zero feature benefit. See plugins/withUpiListener.ts. -->
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>

@@ -26,7 +26,7 @@ import {
 } from "@/db/payments";
 import { seedDedupKey } from "@/parsers";
 import { normalizeLocaleTag } from "@/store/settings";
-import { hasCompletedOnboarding } from "@/store/onboarding";
+import { hasCompletedOnboarding, hasSeenDisclosure } from "@/store/onboarding";
 import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
 import { StatusPill } from "@/components/StatusPill";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -83,9 +83,11 @@ export default function HomeScreen() {
       reloadPayments();
       if (!onboardingChecked) {
         setOnboardingChecked(true);
-        hasCompletedOnboarding().then((done) => {
-          if (!done) router.replace("/disclosure");
-        });
+        Promise.all([hasSeenDisclosure(), hasCompletedOnboarding()]).then(
+          ([seen, done]) => {
+            if (!seen && !done) router.replace("/disclosure");
+          },
+        );
       }
     }, [refreshStatus, reloadPayments, onboardingChecked, router]),
   );

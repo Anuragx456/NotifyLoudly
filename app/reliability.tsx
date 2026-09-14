@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Link, useFocusEffect } from "expo-router";
+import { Link, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   areAlertNotificationsEnabled,
@@ -16,8 +16,10 @@ import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
 import { StatusPill } from "@/components/StatusPill";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { OEM_GUIDES } from "@/components/oemGuide";
+import { ensureDisclosureOrRedirect } from "@/store/disclosureGate";
 
 export default function ReliabilityScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
   const [exempt, setExempt] = useState<boolean | null>(null);
@@ -58,7 +60,8 @@ export default function ReliabilityScreen() {
     };
   }, [refresh]);
 
-  const onRequestExemption = useCallback(() => {
+  const onRequestExemption = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       const opened = openBatteryExemptionRequest();
@@ -66,9 +69,10 @@ export default function ReliabilityScreen() {
     } catch {
       setNotice("Battery request unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
-  const onOpenOem = useCallback(() => {
+  const onOpenOem = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       const opened = openOemAutostartSettings();
@@ -76,9 +80,10 @@ export default function ReliabilityScreen() {
     } catch {
       setNotice("Autostart page unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
-  const onGrantOverlay = useCallback(() => {
+  const onGrantOverlay = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       if (!openOverlayAccessSettings()) {
@@ -89,9 +94,10 @@ export default function ReliabilityScreen() {
     } catch {
       setNotice("Overlay settings unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
-  const onGrantNotif = useCallback(() => {
+  const onGrantNotif = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       if (!requestAlertNotifications()) {
@@ -104,10 +110,10 @@ export default function ReliabilityScreen() {
     } catch {
       setNotice("Notification request unavailable on this build.");
     }
-  }, [refresh]);
+  }, [refresh, router]);
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.paper }]} contentContainerStyle={[styles.content, { paddingTop: Math.max(16, insets.top + 16) }]}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.paper }]} contentContainerStyle={[styles.content, { paddingTop: Math.max(16, insets.top + 16), paddingBottom: Math.max(32, insets.bottom + 16) }]}>
       <Link href="/" style={StyleSheet.flatten([styles.back, { color: theme.muted }])}>
         ‹ Home
       </Link>
@@ -219,8 +225,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
-
-    paddingBottom: 32,
   },
   back: {
     fontFamily: FONTS.semiBold,

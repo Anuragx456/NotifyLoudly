@@ -42,7 +42,9 @@ notification-listener + parser + TTS pipeline.
 - [x] Phase 7 — polish and release prep
 
 Docs: `docs/reliability-checklist.md` (reboot/Doze manual tests),
-`docs/build-checklist.md` (local builds + Play submission).
+`docs/build-checklist.md` (local builds + Play submission),
+`docs/PRIVACY_POLICY.md` (in-app disclosure link + Play Data Safety source),
+`docs/RELEASE_SIGNING.md` (release keystore + version contract).
 
 Each phase ends at an approval gate: nothing from a later phase is started
 early.

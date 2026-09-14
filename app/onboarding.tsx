@@ -17,6 +17,7 @@ import {
 } from "upi-listener";
 import { Ionicons } from "@expo/vector-icons";
 import { setOnboardingCompleted } from "@/store/onboarding";
+import { ensureDisclosureOrRedirect } from "@/store/disclosureGate";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
@@ -148,7 +149,8 @@ export default function OnboardingScreen() {
   const needsNativeNotice =
     "Needs the dev build (`bun run android`) — not Expo Go.";
 
-  const onOpenNotificationAccess = useCallback(() => {
+  const onOpenNotificationAccess = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     if (!isNativeModuleAvailable()) {
       setNotice(needsNativeNotice);
       return;
@@ -160,9 +162,10 @@ export default function OnboardingScreen() {
       setNotice("Couldn't open it — find Notification access in Settings, switch on NotifyLoudly.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router]);
 
-  const onGrantNotif = useCallback(() => {
+  const onGrantNotif = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       if (!requestAlertNotifications()) {
@@ -175,9 +178,10 @@ export default function OnboardingScreen() {
     } catch {
       setNotice("Notification request unavailable on this build.");
     }
-  }, [recheck]);
+  }, [recheck, router]);
 
-  const onGrantOverlay = useCallback(() => {
+  const onGrantOverlay = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       if (!openOverlayAccessSettings()) {
@@ -188,9 +192,10 @@ export default function OnboardingScreen() {
     } catch {
       setNotice("Overlay settings unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
-  const onRequestExemption = useCallback(() => {
+  const onRequestExemption = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       const opened = openBatteryExemptionRequest();
@@ -198,7 +203,7 @@ export default function OnboardingScreen() {
     } catch {
       setNotice("Battery request unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
   const renderState = (on: boolean, pendingLabel?: string) => (
     <View style={styles.stateRow}>

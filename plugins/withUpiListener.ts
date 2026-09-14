@@ -12,11 +12,20 @@ const ALERT_ACTIVITY = "com.notifyloudly.upilistener.PaymentAlertActivity";
 // com.whatsapp is intentionally excluded: it appears in no parser table.
 //
 // Play-safe path (Option A): sideload manifest stays as-is by default.
-// Set PLAY_STORE_BUILD=1 for a Play upload build — the two sideload-only
-// permissions below are then stripped. See docs/build-checklist.md checkbox.
+// Set PLAY_STORE_BUILD=1 for a Play upload build — the sideload-only
+// permission below is then stripped. See docs/build-checklist.md checkbox.
+//
+// NOTE: QUERY_ALL_PACKAGES was hard-deleted (not sideload-only). It was the
+// top Play Protect / Play review flag, and the <queries> block below (23
+// allowlisted UPI packages + upi intents) is the sole, sufficient visibility
+// mechanism. Any residual declaration (e.g. from a third-party dep) is still
+// stripped unconditionally in the manifest hook below.
 const PLAY_STORE_BUILD =
   process.env.PLAY_STORE_BUILD === "1" ||
   process.env.PLAY_STORE_BUILD === "true";
+
+// Banned in every build flavor — stripped unconditionally, never injected.
+const BANNED_PERMISSIONS = ["android.permission.QUERY_ALL_PACKAGES"];
 
 const REQUIRED_PERMISSIONS = [
   "android.permission.FOREGROUND_SERVICE",
@@ -42,10 +51,6 @@ const SIDELOAD_ONLY_PERMISSIONS = [
   // Play restricts this to calling/alarm apps and rejects other uploads
   // declaring it — stripped when PLAY_STORE_BUILD=1.
   "android.permission.USE_FULL_SCREEN_INTENT",
-  // The <queries> block below is sufficient for allowlisted UPI packages.
-  // Kept for local sideload breadth; Play rejects QUERY_ALL_PACKAGES without
-  // a declaration — stripped when PLAY_STORE_BUILD=1.
-  "android.permission.QUERY_ALL_PACKAGES",
 ];
 
 const withUpiListener: ConfigPlugin = (config) => {
@@ -55,13 +60,12 @@ const withUpiListener: ConfigPlugin = (config) => {
     const expectedPermissions = PLAY_STORE_BUILD
       ? REQUIRED_PERMISSIONS
       : [...REQUIRED_PERMISSIONS, ...SIDELOAD_ONLY_PERMISSIONS];
-    let usesPermissions = manifest["uses-permission"] ?? [];
-    if (PLAY_STORE_BUILD) {
-      usesPermissions = usesPermissions.filter(
-        (entry) =>
-          !SIDELOAD_ONLY_PERMISSIONS.includes(entry.$?.["android:name"]),
-      );
-    }
+    // Unconditional: banned permissions never survive, in any flavor —
+    // covers our own sources and any third-party dep that declares them.
+    const stripped = PLAY_STORE_BUILD ? [...SIDELOAD_ONLY_PERMISSIONS, ...BANNED_PERMISSIONS] : [...BANNED_PERMISSIONS];
+    let usesPermissions = (manifest["uses-permission"] ?? []).filter(
+      (entry) => !stripped.includes(entry.$?.["android:name"]),
+    );
     for (const permission of expectedPermissions) {
       const alreadyListed = usesPermissions.some(
         (entry) => entry.$?.["android:name"] === permission,

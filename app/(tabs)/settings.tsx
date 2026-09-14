@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { Link, useFocusEffect } from "expo-router";
+import { Link, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -35,6 +35,7 @@ import {
   type AnnouncerSettings,
 } from "@/store/settings";
 import type { ThemeChoice } from "@/store/themeStore";
+import { ensureDisclosureOrRedirect } from "@/store/disclosureGate";
 
 function ToggleRow({
   label,
@@ -82,6 +83,7 @@ const MONITORED_UPI_APPS: InstalledUpiApp[] = [
 ];
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const [settings, setSettings] = useState<AnnouncerSettings>(() => loadSettings());
   const [notice, setNotice] = useState<string | null>(null);
   const [overlayGranted, setOverlayGranted] = useState(false);
@@ -253,7 +255,8 @@ export default function SettingsScreen() {
     }
   }, [settings.muted, update, revert]);
 
-  const onGrantBattery = useCallback(() => {
+  const onGrantBattery = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       if (!openBatteryExemptionRequest()) {
@@ -263,9 +266,10 @@ export default function SettingsScreen() {
     } catch {
       setNotice("Battery request unavailable on this build.");
     }
-  }, [refreshGrants]);
+  }, [refreshGrants, router]);
 
-  const onOpenOem = useCallback(() => {
+  const onOpenOem = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       if (!openOemAutostartSettings()) {
@@ -274,9 +278,10 @@ export default function SettingsScreen() {
     } catch {
       setNotice("OEM settings unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
-  const onOpenAppDetails = useCallback(() => {
+  const onOpenAppDetails = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     setNotice(null);
     try {
       if (!openAppDetailsSettings()) {
@@ -285,7 +290,7 @@ export default function SettingsScreen() {
     } catch {
       setNotice("App settings unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
   const onRescanApps = useCallback(() => {
     setRescanning(true);
@@ -330,7 +335,8 @@ export default function SettingsScreen() {
     }
   }, [settings.overlayEnabled, update, revert]);
 
-  const onGrantOverlay = useCallback(() => {
+  const onGrantOverlay = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     try {
       if (!openOverlayAccessSettings()) {
         setNotice("Could not open the overlay page — allow “Display over other apps” manually in system settings.");
@@ -340,9 +346,10 @@ export default function SettingsScreen() {
     } catch {
       setNotice("Overlay settings unavailable on this build.");
     }
-  }, []);
+  }, [router]);
 
-  const onGrantNotif = useCallback(() => {
+  const onGrantNotif = useCallback(async () => {
+    if (!(await ensureDisclosureOrRedirect(router))) return;
     try {
       if (!requestAlertNotifications()) {
         setNotice("If no prompt appeared, allow notifications for NotifyLoudly in system settings.");
@@ -351,7 +358,7 @@ export default function SettingsScreen() {
     } catch {
       setNotice("Notification request unavailable on this build.");
     }
-  }, [refreshGrants]);
+  }, [refreshGrants, router]);
 
   const onPreviewAlert = useCallback(() => {
     setNotice(null);

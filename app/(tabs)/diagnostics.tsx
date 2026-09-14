@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import { Link, useFocusEffect } from "expo-router";
+import { Link, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   addListenerConnectionListener,
@@ -26,6 +26,7 @@ import { friendlyAppName } from "@/components/upiApps";
 import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
 import { StatusPill } from "@/components/StatusPill";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ensureDisclosureOrRedirect } from "@/store/disclosureGate";
 
 const MAX_LOG = 50;
 
@@ -67,6 +68,7 @@ function StateRow({ label, value, good }: { label: string; value: string; good: 
 }
 
 export default function DiagnosticsScreen() {
+  const router = useRouter();
   const [accessGranted, setAccessGranted] = useState(false);
   const [connected, setConnected] = useState(false);
   const [ttsRunning, setTtsRunning] = useState(false);
@@ -193,7 +195,8 @@ export default function DiagnosticsScreen() {
             <View style={styles.btnRow}>
               <Pressable
                 style={[styles.primary, { backgroundColor: theme.ink }]}
-                onPress={() => {
+                onPress={async () => {
+                  if (!(await ensureDisclosureOrRedirect(router))) return;
                   if (!isNativeModuleAvailable()) {
                     setNotice("System settings cannot open from Expo Go — use `bun run android`.");
                     return;
