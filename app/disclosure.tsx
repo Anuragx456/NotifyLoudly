@@ -36,7 +36,14 @@ export default function DisclosureScreen() {
             Your counter phone speaks each UPI payment aloud.
           </Text>
           <Text style={[styles.micro, { color: theme.muted }]}>
-            UPI alerts only · never leaves this phone
+            To do this, NotifyLoudly reads notification text (title and body)
+            from your UPI and bank apps, extracts the payment amount and sender,
+            and speaks it aloud.{"\n\n"}
+            UPI payment notifications only — no other notifications are used.
+            Amount, sender, app and time are stored offline in on-device storage
+            only. No upload, no account, no analytics.{"\n\n"}
+            Tap Continue to consent and turn on notification access in the next
+            step.
           </Text>
         </View>
 

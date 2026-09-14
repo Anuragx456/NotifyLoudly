@@ -46,6 +46,12 @@ emulator, Bun installed.
       justify it under an allowed use case with a demo video, or remove it from
       `plugins/withUpiListener.ts` before submission — the app already falls back
       to the generic battery-settings page (`openBatteryExemptionRequest`).
+- [ ] **Play-safe permission strip**: build with `PLAY_STORE_BUILD=1` so
+      `plugins/withUpiListener.ts` strips the two sideload-only permissions
+      (`USE_FULL_SCREEN_INTENT`, `QUERY_ALL_PACKAGES`), then confirm they are
+      absent in `android/app/src/main/AndroidManifest.xml`. Sideload builds
+      (default) keep them; the lock-screen card falls back to `showWhenLocked`
+      and the `<queries>` block covers the 23 allowlisted UPI packages.
 - [ ] **Sensitive-permission video**: record disclosure → consent → system grant →
       test announcement → History, per the declaration form requirements.
 - [ ] Target API level and 16 KB page-size compliance per current Play policy.

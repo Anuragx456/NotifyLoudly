@@ -2,18 +2,41 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import {
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
+  useFonts,
+} from "@expo-google-fonts/manrope";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 SplashScreen.preventAutoHideAsync();
 
-// NOTE: Manrope wiring (FONTS in theme.ts) is in place across all screens.
-// To activate it, run: bun add expo-font @expo-google-fonts/manrope
-// then restore the useFonts block below. Until then we use system fonts
-// so Metro bundles without the missing package.
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
+  });
+
   useEffect(() => {
-    SplashScreen.hideAsync();
-  }, []);
+    if (fontError) {
+      // Fall back to system fonts — never crash on a font load failure.
+      console.warn("[fonts] Manrope failed to load, using system fallback:", fontError);
+    }
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  // Keep splash visible until fonts resolve (or fail) to avoid a FOUT flash.
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   return (
     <SafeAreaProvider>

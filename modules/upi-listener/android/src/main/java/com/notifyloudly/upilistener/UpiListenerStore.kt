@@ -25,6 +25,8 @@ object UpiListenerStore {
 
   @Volatile private var settingsLoaded: Boolean = false
 
+  // Keep in sync with src/components/upiApps.ts (UPI_APPS, 23 entries).
+  // This is the cold-install filter before detectedPackages fills in.
   val KNOWN_UPI_PACKAGES: Set<String> = setOf(
     "com.google.android.apps.nbu.paisa.user",
     "com.google.android.apps.nbu.paisa.merchant",
@@ -34,6 +36,7 @@ object UpiListenerStore {
     "net.one97.paytm.merchant",
     "com.paytmbusiness",
     "in.org.npci.upiapp",
+    "com.naviapp",
     "com.navi.services",
     "com.navi.upi",
     "com.dreamplug.androidapp",
@@ -46,7 +49,8 @@ object UpiListenerStore {
     "com.upi.axispay",
     "com.hdfcbank.payzapp",
     "com.canarabank.mobility",
-    "com.bankofbaroda.upi"
+    "com.bankofbaroda.upi",
+    "com.bankofbaroda.mconnect"
   )
 
   val DEFAULT_PACKAGES: Set<String> = KNOWN_UPI_PACKAGES

@@ -33,6 +33,5 @@
     <package android:name="com.canarabank.mobility"/>
     <package android:name="com.bankofbaroda.upi"/>
     <package android:name="com.bankofbaroda.mconnect"/>
-    <package android:name="com.whatsapp"/>
   </queries>
 </manifest>

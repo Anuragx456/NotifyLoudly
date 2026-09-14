@@ -6,6 +6,18 @@ const TTS_SERVICE = "com.notifyloudly.upilistener.UpiTtsService";
 const BOOT_RECEIVER = "com.notifyloudly.upilistener.UpiBootReceiver";
 const ALERT_ACTIVITY = "com.notifyloudly.upilistener.PaymentAlertActivity";
 
+// Allowlist authority: src/components/upiApps.ts (UPI_APPS, 23 entries).
+// Keep this <queries> package list + AndroidManifest.xml + UpiListenerStore
+// KNOWN_UPI_PACKAGES + DEFAULT_UPI_PACKAGES + APP_NAMES in sync with it.
+// com.whatsapp is intentionally excluded: it appears in no parser table.
+//
+// Play-safe path (Option A): sideload manifest stays as-is by default.
+// Set PLAY_STORE_BUILD=1 for a Play upload build — the two sideload-only
+// permissions below are then stripped. See docs/build-checklist.md checkbox.
+const PLAY_STORE_BUILD =
+  process.env.PLAY_STORE_BUILD === "1" ||
+  process.env.PLAY_STORE_BUILD === "true";
+
 const REQUIRED_PERMISSIONS = [
   "android.permission.FOREGROUND_SERVICE",
   "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
@@ -16,20 +28,23 @@ const REQUIRED_PERMISSIONS = [
   // Heads-up payment alert (C). Runtime-requested on API 33+; install-time
   // no-op on older releases.
   "android.permission.POST_NOTIFICATIONS",
+  // Doze exemption request — without this the app-killer in Reliability
+  // silently does nothing and the nightly burst still wins.
+  "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+];
+
+const SIDELOAD_ONLY_PERMISSIONS = [
   // Lock-screen full-screen card (A). Lets the heads-up notification's
   // full-screen intent legally launch PaymentAlertActivity over the keyguard
   // from the background on Android 14+. Install-time grant for sideloaded
   // apps; the user can revoke it under Special app access → Manage
   // full-screen intents.
-  // TODO(play): remove before any Play upload — Play restricts this to
-  // calling/alarm apps and rejects other uploads declaring it.
+  // Play restricts this to calling/alarm apps and rejects other uploads
+  // declaring it — stripped when PLAY_STORE_BUILD=1.
   "android.permission.USE_FULL_SCREEN_INTENT",
-  // Doze exemption request — without this the app-killer in Reliability
-  // silently does nothing and the nightly burst still wins.
-  "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-  // TODO(play): remove before any Play upload — the <queries> block below is
-  // sufficient for allowlisted UPI packages. Kept for local sideload breadth;
-  // Play rejects QUERY_ALL_PACKAGES without a declaration.
+  // The <queries> block below is sufficient for allowlisted UPI packages.
+  // Kept for local sideload breadth; Play rejects QUERY_ALL_PACKAGES without
+  // a declaration — stripped when PLAY_STORE_BUILD=1.
   "android.permission.QUERY_ALL_PACKAGES",
 ];
 
@@ -37,8 +52,17 @@ const withUpiListener: ConfigPlugin = (config) => {
   return withAndroidManifest(config, (config) => {
     const manifest = config.modResults.manifest;
 
-    const usesPermissions = manifest["uses-permission"] ?? [];
-    for (const permission of REQUIRED_PERMISSIONS) {
+    const expectedPermissions = PLAY_STORE_BUILD
+      ? REQUIRED_PERMISSIONS
+      : [...REQUIRED_PERMISSIONS, ...SIDELOAD_ONLY_PERMISSIONS];
+    let usesPermissions = manifest["uses-permission"] ?? [];
+    if (PLAY_STORE_BUILD) {
+      usesPermissions = usesPermissions.filter(
+        (entry) =>
+          !SIDELOAD_ONLY_PERMISSIONS.includes(entry.$?.["android:name"]),
+      );
+    }
+    for (const permission of expectedPermissions) {
       const alreadyListed = usesPermissions.some(
         (entry) => entry.$?.["android:name"] === permission,
       );
@@ -88,7 +112,6 @@ const withUpiListener: ConfigPlugin = (config) => {
           { $: { "android:name": "com.canarabank.mobility" } },
           { $: { "android:name": "com.bankofbaroda.upi" } },
           { $: { "android:name": "com.bankofbaroda.mconnect" } },
-          { $: { "android:name": "com.whatsapp" } },
         ],
       });
       manifest.queries = queries;
