@@ -39,24 +39,12 @@ export default function DisclosureScreen() {
           </View>
           <Text style={[styles.title, { color: theme.ink }]}>Hear every payment.</Text>
           <Text style={[styles.sub, { color: theme.muted }]}>
-            Your counter phone speaks each UPI payment aloud.
+            Speaks each UPI payment aloud.
           </Text>
           <Text style={[styles.micro, { color: theme.muted }]}>
-            To do this, NotifyLoudly needs just two grants —{"\n\n"}
-            · Notification access: reads notification text (title and body)
-            from your UPI and bank apps, extracts the payment amount and
-            sender, and speaks it aloud. UPI payment notifications only — no
-            other notifications are used.{"\n\n"}
-            · Show pop-up: posts a payment card when unlocked (never on the
-            lock screen).{"\n\n"}
-            The speech service runs in the foreground while announcing, and
-            restarts automatically after reboot or app update.{"\n\n"}
-            Float-on-top banner and overnight stay-alive are optional extras
-            you can turn on later in Settings — they are not needed to start.{"\n\n"}
-            Amount, sender, app and time are stored offline in on-device
-            storage only. No upload, no account, no analytics.{"\n\n"}
-            Tap Continue to consent and turn on notification access in the next
-            step.
+            Needs notification access (UPI payment alerts only) + notifications
+            (payment card when unlocked).{"\n\n"}
+            Stays on this phone — no account, no upload.
           </Text>
           <Pressable
             onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}

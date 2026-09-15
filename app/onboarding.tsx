@@ -128,19 +128,6 @@ export default function OnboardingScreen() {
     return () => clearTimeout(timer);
   }, [granted, connected, rebindAsked, recheck]);
 
-  const readyCount = (granted ? 1 : 0) + (notifAllowed ? 1 : 0);
-
-  const overallTone = !granted ? "bad" : readyCount === 2 ? "good" : "neutral";
-  const overallLabel = !granted
-    ? "Not ready"
-    : readyCount === 2
-      ? "All set"
-      : `${readyCount} of 2 ready`;
-  const overallDot =
-    overallTone === "good" ? theme.green : overallTone === "bad" ? theme.red : theme.muted;
-  const overallText =
-    overallTone === "good" ? theme.green : overallTone === "bad" ? theme.red : theme.muted;
-
   const finish = useCallback(async () => {
     await setOnboardingCompleted();
     // Grant is confirmed at this point — arm the periodic self-heal. (Also
@@ -188,21 +175,11 @@ export default function OnboardingScreen() {
     }
   }, [recheck, router]);
 
-  const renderState = (on: boolean, pendingLabel?: string) => (
+  const renderState = (on: boolean) => (
     <View style={styles.stateRow}>
-      <View
-        style={[
-          styles.dot,
-          { backgroundColor: on ? theme.green : pendingLabel ? theme.muted : theme.red },
-        ]}
-      />
-      <Text
-        style={[
-          styles.state,
-          { color: on ? theme.green : pendingLabel ? theme.muted : theme.red },
-        ]}
-      >
-        {on ? "On" : (pendingLabel ?? "Off")}
+      <View style={[styles.dot, { backgroundColor: on ? theme.green : theme.red }]} />
+      <Text style={[styles.state, { color: on ? theme.green : theme.red }]}>
+        {on ? "On" : "Off"}
       </Text>
     </View>
   );
@@ -240,19 +217,7 @@ export default function OnboardingScreen() {
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.ink }]}>Turn on listening.</Text>
           <Text style={[styles.sub, { color: theme.muted }]}>
-            {!granted
-              ? "Step 1 of 2 — without this, nothing speaks."
-              : readyCount === 2
-                ? "Everything's on."
-                : "One more step to go."}
-          </Text>
-          <View style={styles.overall}>
-            <View style={[styles.dot, { backgroundColor: overallDot }]} />
-            <Text style={[styles.overallLabel, { color: overallText }]}>{overallLabel}</Text>
-          </View>
-          <Text style={[styles.subNote, { color: theme.muted }]}>
-            Just these two — announcements start speaking. Everything else
-            (pop-up banner, overnight stay-alive) is optional later in Settings.
+            Two steps — then payments speak aloud.
           </Text>
         </View>
 
@@ -271,7 +236,7 @@ export default function OnboardingScreen() {
               </View>
               <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, { color: theme.ink }]}>
-                  1 · Hear payments <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
+                  1 · Hear payments
                 </Text>
                 {granted && !connected
                   ? (
@@ -280,10 +245,7 @@ export default function OnboardingScreen() {
                   : renderState(granted)}
                 {!granted && (
                   <Text style={[styles.why, { color: theme.muted }]}>
-                    Lets NotifyLoudly read UPI payment notifications and speak
-                    them aloud.{"\n"}
-                    Settings → Notifications → Advanced → Special app access →
-                    Notification access → turn on NotifyLoudly.
+                    Reads UPI payment notifications and speaks them aloud.
                   </Text>
                 )}
               </View>
@@ -293,15 +255,11 @@ export default function OnboardingScreen() {
                   : <View style={styles.pendingDot} accessibilityRole="image" accessibilityLabel="Binding" />
                 : renderAction("Turn on", onOpenNotificationAccess, "Turn on notification access")}
             </View>
-            {(!granted || (granted && !connected)) && (
+            {(!granted || rebindFailed) && (
               <View style={styles.subRow}>
-                {granted && !connected && (
+                {rebindFailed && (
                   <Text style={[styles.why, { color: theme.muted }]}>
-                    {rebindFailed
-                      ? "Still not bound — reboot once, then return."
-                      : rebindAsked
-                        ? "Asked Android to bind it. A few seconds…"
-                        : "Waiting a few seconds…"}
+                    Still not bound — reboot once, then return.
                   </Text>
                 )}
                 {!granted && (
@@ -323,14 +281,12 @@ export default function OnboardingScreen() {
               </View>
               <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, { color: theme.ink }]}>
-                  2 · Show pop-up <Text style={[styles.tag, { color: theme.red }]}>· Required</Text>
+                  2 · Show pop-up
                 </Text>
                 {renderState(notifAllowed)}
                 {!notifAllowed && (
                   <Text style={[styles.why, { color: theme.muted }]}>
-                    Posts a payment card when unlocked (never on the lock
-                    screen).{"\n"}
-                    Tap Allow → tap Allow on the system prompt.
+                    Shows a payment card when unlocked.
                   </Text>
                 )}
               </View>
@@ -341,18 +297,7 @@ export default function OnboardingScreen() {
           </View>
         </View>
 
-        <Text style={[styles.footnote, { color: theme.muted }]}>
-          Float-on-top banner and overnight stay-alive are optional — find them
-          in Settings and Stay-alive after setup.
-        </Text>
-
         {notice && <Text style={[styles.notice, { color: theme.red }]}>{notice}</Text>}
-
-        {!(granted && notifAllowed) && (
-          <Text style={[styles.hint, { color: theme.muted }]}>
-            Turn on the required steps to finish setup.
-          </Text>
-        )}
 
         <View style={styles.footer}>
           <Pressable
@@ -408,22 +353,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     ...TYPE.bodyLarge,
   },
-  subNote: {
-    marginTop: 8,
-    textAlign: "center",
-    ...TYPE.bodyMedium,
-  },
-  overall: {
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  overallLabel: {
-    fontFamily: FONTS.bold,
-    fontSize: 13,
-    fontWeight: "700",
-  },
   warning: {
     marginTop: 12,
     textAlign: "center",
@@ -474,19 +403,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 20,
   },
-  tag: {
-    fontFamily: FONTS.semiBold,
-    fontSize: 12,
-    fontWeight: "600",
-  },
   why: {
-    fontFamily: FONTS.regular,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  footnote: {
-    marginTop: 12,
-    textAlign: "center",
     fontFamily: FONTS.regular,
     fontSize: 13,
     lineHeight: 18,
@@ -541,11 +458,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "600",
-  },
-  hint: {
-    marginTop: 12,
-    textAlign: "center",
-    ...TYPE.bodyMedium,
   },
   footer: {
     marginTop: 24,
