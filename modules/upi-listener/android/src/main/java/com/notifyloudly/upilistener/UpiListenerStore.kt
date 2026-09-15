@@ -12,6 +12,9 @@ object UpiListenerStore {
   private const val KEY_MUTED = "muted"
   private const val KEY_OVERLAY = "payment_overlay"
   private const val KEY_THEME = "theme_mode"
+  private const val KEY_HEALTH_EVER_GRANTED = "health_ever_granted"
+  private const val KEY_HEALTH_OUTAGE_SINCE = "health_outage_since"
+  private const val KEY_HEALTH_NUDGE_FOR = "health_nudge_for"
 
   const val DEFAULT_LOCALE_TAG = "en-IN"
   const val DEFAULT_THEME = "system"
@@ -144,5 +147,39 @@ object UpiListenerStore {
   fun setThemeMode(context: Context, mode: String) {
     themeMode = normalizeTheme(mode)
     prefs(context).edit().putString(KEY_THEME, themeMode).apply()
+  }
+
+  // First-grant latch for the health job: never scheduled before the user
+  // grants notification access, but kept scheduled afterwards even if an OEM
+  // later revokes the grant — so the worker can keep reporting revoked.
+  fun markHealthEverGranted(context: Context) {
+    prefs(context).edit().putBoolean(KEY_HEALTH_EVER_GRANTED, true).apply()
+  }
+
+  fun isHealthEverGranted(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_HEALTH_EVER_GRANTED, false)
+  }
+
+  // Phase 3 outage tracking: stamps the first down observation (wall-clock
+  // ms, 0 = healthy) and which outage-start the nudge was already posted for,
+  // so the nudge fires at most once per outage instead of every worker run.
+  fun getHealthOutageSince(context: Context): Long {
+    return prefs(context).getLong(KEY_HEALTH_OUTAGE_SINCE, 0L)
+  }
+
+  fun setHealthOutageSince(context: Context, sinceMs: Long) {
+    prefs(context).edit().putLong(KEY_HEALTH_OUTAGE_SINCE, sinceMs).apply()
+  }
+
+  fun clearHealthOutage(context: Context) {
+    prefs(context).edit().remove(KEY_HEALTH_OUTAGE_SINCE).remove(KEY_HEALTH_NUDGE_FOR).apply()
+  }
+
+  fun isHealthNudgePostedFor(context: Context, sinceMs: Long): Boolean {
+    return prefs(context).getLong(KEY_HEALTH_NUDGE_FOR, -1L) == sinceMs
+  }
+
+  fun markHealthNudgePostedFor(context: Context, sinceMs: Long) {
+    prefs(context).edit().putLong(KEY_HEALTH_NUDGE_FOR, sinceMs).apply()
   }
 }

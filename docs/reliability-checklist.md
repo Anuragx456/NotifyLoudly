@@ -27,9 +27,18 @@ cannot test any of this — it has no native module. Tick each box by hand.
       announcements should be delayed or missing — this confirms the exemption matters.
 
 ## E. OEM killers (Xiaomi / Oppo / Vivo / Samsung)
-- [ ] Follow the brand steps in Stay-alive setup (autostart + unrestricted battery).
-- [ ] Swipe NotifyLoudly away from Recents — Home still reads **Listening** on reopen.
-- [ ] Lock it in Recents where the OEM supports locking (Xiaomi).
+- [ ] Follow the brand steps in Stay-alive setup (autostart + unrestricted battery + Recents lock).
+- [ ] Lock NotifyLoudly in Recents (lock icon / Keep open visible on the card), then swipe
+      other apps away — Home still reads **Listening** on reopen.
+- [ ] Unlocked counter-check: remove the Recents lock, swipe NotifyLoudly away, wait
+      ~1 min, reopen — Listener reads **Unbound** (proves the lock is what protects it).
+      Re-lock before finishing.
+- [ ] Per-brand paths exercised (menu names differ by OS version — record the exact
+      path that worked on this device):
+  - [ ] Xiaomi (HyperOS/MIUI): Security app → Autostart → ON; App battery saver → No restrictions; Recents lock.
+  - [ ] Oppo/Realme (ColorOS): Autostart → ON; Allow background activity → ON; Recents lock.
+  - [ ] Vivo/iQOO (FuntouchOS): Autostart → ON; Background power consumption → Allow; Recents lock.
+  - [ ] Samsung (OneUI): Never sleeping apps → add; Battery → Unrestricted; Recents Keep open.
 
 ## F. Permission revoked
 - [ ] Revoke notification access in system settings.

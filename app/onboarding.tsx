@@ -3,7 +3,9 @@ import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import {
   addListenerConnectionListener,
+  addListenerHealthListener,
   areAlertNotificationsEnabled,
+  ensureHealthCheckScheduled,
   isListenerConnected,
   isNativeModuleAvailable,
   isNotificationAccessEnabled,
@@ -61,9 +63,22 @@ export default function OnboardingScreen() {
     });
     // Bound-state flips only when the listener service binds/unbinds, which
     // happens outside this screen — subscribe so the status tracks it live.
+    // The tri-state health subscription covers the revoke case too: rebinds
+    // are a no-op when the grant is gone, so access-revoked must surface as
+    // "turn it back on", not "waiting to bind".
     const connSub = (() => {
       try {
         return addListenerConnectionListener((event) => {
+          setConnected(event.connected);
+        });
+      } catch {
+        return null;
+      }
+    })();
+    const healthSub = (() => {
+      try {
+        return addListenerHealthListener((event) => {
+          setGranted(event.accessGranted);
           setConnected(event.connected);
         });
       } catch {
@@ -74,6 +89,11 @@ export default function OnboardingScreen() {
       appSub.remove();
       try {
         connSub?.remove();
+      } catch {
+        // Tear-down is best effort.
+      }
+      try {
+        healthSub?.remove();
       } catch {
         // Tear-down is best effort.
       }
@@ -123,6 +143,14 @@ export default function OnboardingScreen() {
 
   const finish = useCallback(async () => {
     await setOnboardingCompleted();
+    // Grant is confirmed at this point — arm the periodic self-heal. (Also
+    // re-armed on app start in _layout; this covers first-grant without a
+    // restart.)
+    try {
+      ensureHealthCheckScheduled();
+    } catch {
+      // Native module unavailable — nothing to schedule.
+    }
     router.replace("/");
   }, [router]);
 

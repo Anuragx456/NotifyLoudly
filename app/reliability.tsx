@@ -119,7 +119,7 @@ export default function ReliabilityScreen() {
       </Link>
       <Text style={[styles.title, { color: theme.ink }]}>Stay alive</Text>
       <Text style={[styles.subtitle, { color: theme.faint }]}>
-        Android kills background apps. These three steps keep announcements working after
+        Android kills background apps. These four steps keep announcements working after
         reboots and overnight.
       </Text>
 
@@ -144,10 +144,11 @@ export default function ReliabilityScreen() {
         <Text style={[styles.primaryLabel, { color: theme.paper }]}>Request battery exemption</Text>
       </Pressable>
 
-      <Text style={[styles.section, { color: theme.muted }]}>2 · Autostart on your brand</Text>
+      <Text style={[styles.section, { color: theme.muted }]}>2 · Autostart + Recents lock on your brand</Text>
       <Text style={[styles.body, { color: theme.ink }]}>
         Xiaomi, Oppo, Vivo and Samsung add their own app killers on top of Android. Allow
-        NotifyLoudly to start itself and run in the background.
+        NotifyLoudly to start itself, then lock it in Recents — without the lock, swiping
+        the app away kills the listener outright and nothing announces until you reopen.
       </Text>
       <Pressable style={[styles.secondary, { borderColor: theme.ink }]} onPress={onOpenOem} accessibilityRole="button">
         <Text style={[styles.secondaryLabel, { color: theme.ink }]}>Try opening autostart settings</Text>

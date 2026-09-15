@@ -4,6 +4,7 @@ import { Link, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   addListenerConnectionListener,
+  addListenerHealthListener,
   addUpiNotificationListener,
   areAlertNotificationsEnabled,
   getListenerHeartbeat,
@@ -25,12 +26,29 @@ import { FONTS, RADIUS, TYPE, useThemeColors } from "@/components/theme";
 import { StatusPill } from "@/components/StatusPill";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ensureDisclosureOrRedirect } from "@/store/disclosureGate";
+import { listListeningEpisodes, type ListeningEpisode } from "@/db/listening";
 
 const MAX_LOG = 50;
+const MAX_EPISODES = 10;
 
 function formatTime(postedAt: number): string {
   if (!postedAt) return "—";
   return new Date(postedAt).toLocaleTimeString();
+}
+
+function formatEpisodeTime(atMs: number): string {
+  if (!atMs) return "—";
+  const date = new Date(atMs);
+  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
+// "Disconnected 11:42 PM – 6:15 AM" per the Phase 4 brief; open episodes
+// read "… – now" so an ongoing outage is obvious at a glance.
+function formatEpisode(episode: ListeningEpisode): string {
+  const start = formatEpisodeTime(episode.startedAt);
+  const end = episode.endedAt == null ? "now" : formatEpisodeTime(episode.endedAt);
+  const label = episode.reason === "access-revoked" ? "Access revoked" : "Disconnected";
+  return `${label} ${start} – ${end}`;
 }
 
 function previewText(event: UpiNotification): string {
@@ -75,11 +93,21 @@ export default function DiagnosticsScreen() {
   const [overlayGranted, setOverlayGranted] = useState(false);
   const [notifAllowed, setNotifAllowed] = useState(false);
   const [events, setEvents] = useState<UpiNotification[]>([]);
+  const [episodes, setEpisodes] = useState<ListeningEpisode[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
 
+  const refreshEpisodes = useCallback(() => {
+    try {
+      setEpisodes(listListeningEpisodes(MAX_EPISODES));
+    } catch {
+      // Db locked or otherwise unavailable — keep the last snapshot.
+    }
+  }, []);
+
   const refresh = useCallback(() => {
+    refreshEpisodes();
     try {
       setAccessGranted(isNotificationAccessEnabled());
     } catch {
@@ -115,7 +143,7 @@ export default function DiagnosticsScreen() {
     } catch {
       setNotifAllowed(false);
     }
-  }, []);
+  }, [refreshEpisodes]);
 
   useFocusEffect(refresh);
 
@@ -131,6 +159,7 @@ export default function DiagnosticsScreen() {
     } catch {
       // Native module unavailable — stay empty.
     }
+    refreshEpisodes();
     const subs = [
       addUpiNotificationListener((event) => {
         setEvents((prev) => [event, ...prev].slice(0, MAX_LOG));
@@ -139,9 +168,14 @@ export default function DiagnosticsScreen() {
         setConnected(event.connected);
         refresh();
       }),
+      // Health pushes arrive on bind flips (and worker checks when JS is up),
+      // so the history list tracks episodes live without waiting for focus.
+      addListenerHealthListener(() => {
+        refreshEpisodes();
+      }),
     ];
     return () => subs.forEach((sub) => sub.remove());
-  }, [refresh]);
+  }, [refresh, refreshEpisodes]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.paper, paddingTop: Math.max(16, insets.top + 16) }]}>
@@ -201,6 +235,31 @@ export default function DiagnosticsScreen() {
                 </Pressable>
               </Link>
             </View>
+
+            <Text style={[styles.section, { color: theme.muted }]}>Listening history</Text>
+            {episodes.length === 0 ? (
+              <Text style={[styles.empty, { color: theme.muted }]}>
+                Always listening since install — no outages recorded.
+              </Text>
+            ) : (
+              episodes.map((episode) => (
+                <View
+                  key={episode.id}
+                  style={[styles.logRow, { borderBottomColor: theme.line }]}
+                >
+                  <Text style={[styles.logApp, { color: theme.ink }]}>
+                    {formatEpisode(episode)}
+                  </Text>
+                  <Text style={[styles.logMeta, { color: theme.muted }]}>
+                    {episode.endedAt == null
+                      ? "Still down — fix it in Stay-alive setup below"
+                      : episode.reason === "access-revoked"
+                        ? "Access was turned off, then back on"
+                        : "Recovered automatically"}
+                  </Text>
+                </View>
+              ))
+            )}
 
             <Text style={[styles.section, { color: theme.muted }]}>Raw log ({events.length})</Text>
             {events.length === 0 && (

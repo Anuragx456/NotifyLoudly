@@ -16,6 +16,20 @@ export interface ListenerConnectionEvent {
   connected: boolean;
 }
 
+export type ListenerHealthStatus = "connected" | "disconnected" | "access-revoked";
+
+export interface ListenerHealth {
+  status: ListenerHealthStatus;
+  accessGranted: boolean;
+  connected: boolean;
+}
+
+export interface ListenerHealthEvent {
+  status: string;
+  accessGranted: boolean;
+  connected: boolean;
+}
+
 export interface AnnouncementEvent {
   text: string;
   latencyMs: number;
@@ -95,6 +109,7 @@ type UpiListenerEvents = {
   onUpiNotification: (event: UpiNotification) => void;
   onListenerConnectionChanged: (event: ListenerConnectionEvent) => void;
   onAnnouncement: (event: AnnouncementEvent) => void;
+  onListenerHealthChanged: (event: ListenerHealthEvent) => void;
 };
 
 interface UpiListenerNativeModule {
@@ -109,7 +124,11 @@ interface UpiListenerNativeModule {
   getLastAnnouncement(): LastAnnouncement | null;
   isNotificationAccessEnabled(): boolean;
   isListenerConnected(): boolean;
+  getListenerHealth(): ListenerHealth;
+  checkListenerHealth(): ListenerHealth;
   openNotificationAccessSettings(): boolean;
+  ensureHealthCheckScheduled(): boolean;
+  cancelHealthCheck(): boolean;
   getAllowlistedPackages(): string[];
   setAllowlistedPackages(packages: string[]): boolean;
   getPendingNotifications(): UpiNotification[];
@@ -192,6 +211,41 @@ export function isListenerConnected(): boolean {
   return getNativeModule()?.isListenerConnected() ?? false;
 }
 
+function normalizeHealth(raw: unknown): ListenerHealth {
+  const r = (raw ?? {}) as Partial<ListenerHealth>;
+  const status: ListenerHealthStatus =
+    r.status === "connected" || r.status === "access-revoked" ? r.status : "disconnected";
+  return {
+    status,
+    accessGranted: r.accessGranted === true,
+    connected: r.connected === true,
+  };
+}
+
+export function getListenerHealth(): ListenerHealth {
+  try {
+    return normalizeHealth(getNativeModule()?.getListenerHealth());
+  } catch {
+    return { status: "disconnected", accessGranted: false, connected: false };
+  }
+}
+
+export function checkListenerHealth(): ListenerHealth {
+  try {
+    return normalizeHealth(
+      (getNativeModule() as unknown as { checkListenerHealth?: () => unknown } | null)?.checkListenerHealth?.(),
+    );
+  } catch {
+    return { status: "disconnected", accessGranted: false, connected: false };
+  }
+}
+
+export function addListenerHealthListener(
+  listener: (event: ListenerHealthEvent) => void,
+): EventSubscription {
+  return getEmitter()?.addListener("onListenerHealthChanged", listener) ?? noopSubscription();
+}
+
 export function requestListenerRebind(): boolean {
   try {
     const m = (getNativeModule() as unknown as { requestListenerRebind?: () => boolean } | null);
@@ -203,6 +257,22 @@ export function requestListenerRebind(): boolean {
 
 export function openNotificationAccessSettings(): boolean {
   return getNativeModule()?.openNotificationAccessSettings() ?? false;
+}
+
+export function ensureHealthCheckScheduled(): boolean {
+  try {
+    return getNativeModule()?.ensureHealthCheckScheduled() ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export function cancelHealthCheck(): boolean {
+  try {
+    return getNativeModule()?.cancelHealthCheck() ?? false;
+  } catch {
+    return false;
+  }
 }
 
 export function getAllowlistedPackages(): string[] {

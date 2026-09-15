@@ -21,11 +21,12 @@ class UpiListenerModule : Module() {
   private var notificationObserver: ((Map<String, Any>) -> Unit)? = null
   private var connectionObserver: ((Boolean) -> Unit)? = null
   private var announcementObserver: ((Map<String, Any>) -> Unit)? = null
+  private var healthObserver: ((Map<String, Any>) -> Unit)? = null
 
   override fun definition() = ModuleDefinition {
     Name("UpiListener")
 
-    Events("onUpiNotification", "onListenerConnectionChanged", "onAnnouncement")
+    Events("onUpiNotification", "onListenerConnectionChanged", "onAnnouncement", "onListenerHealthChanged")
 
     Function("isNotificationAccessEnabled") {
       val context = appContext.reactContext ?: return@Function false
@@ -36,6 +37,24 @@ class UpiListenerModule : Module() {
 
     Function("isListenerConnected") {
       UpiNotificationListenerService.isConnected
+    }
+
+    Function("getListenerHealth") {
+      val context = appContext.reactContext ?: return@Function mapOf(
+        "status" to UpiListenerHealth.STATUS_DISCONNECTED,
+        "accessGranted" to false,
+        "connected" to false
+      )
+      UpiListenerHealth.toMap(UpiListenerHealth.check(context))
+    }
+
+    Function("checkListenerHealth") {
+      val context = appContext.reactContext ?: return@Function mapOf(
+        "status" to UpiListenerHealth.STATUS_DISCONNECTED,
+        "accessGranted" to false,
+        "connected" to false
+      )
+      UpiListenerHealth.toMap(UpiListenerHealth.checkAndEmit(context))
     }
 
     Function("requestListenerRebind") {
@@ -51,6 +70,25 @@ class UpiListenerModule : Module() {
           }
         }
         // Pre-N has no rebind API — binding is automatic, treat as no-op success.
+        true
+      } catch (_: Exception) {
+        false
+      }
+    }
+
+    Function("ensureHealthCheckScheduled") {
+      try {
+        val context = appContext.reactContext ?: return@Function false
+        UpiHealthScheduler.ensureScheduled(context)
+      } catch (_: Exception) {
+        false
+      }
+    }
+
+    Function("cancelHealthCheck") {
+      try {
+        val context = appContext.reactContext ?: return@Function false
+        UpiHealthScheduler.cancel(context)
         true
       } catch (_: Exception) {
         false
@@ -674,6 +712,27 @@ class UpiListenerModule : Module() {
     OnStopObserving("onListenerConnectionChanged") {
       connectionObserver?.let { UpiListenerBridge.removeConnectionObserver(it) }
       connectionObserver = null
+    }
+
+    OnStartObserving("onListenerHealthChanged") {
+      val weakModule = WeakReference(this@UpiListenerModule)
+      val observer: (Map<String, Any>) -> Unit = { payload ->
+        val body = Bundle().apply {
+          putString("status", payload["status"] as? String ?: "")
+          putBoolean("accessGranted", payload["accessGranted"] as? Boolean ?: false)
+          putBoolean("connected", payload["connected"] as? Boolean ?: false)
+        }
+        mainHandler.post {
+          weakModule.get()?.sendEvent("onListenerHealthChanged", body)
+        }
+      }
+      healthObserver = observer
+      UpiListenerBridge.addHealthObserver(observer)
+    }
+
+    OnStopObserving("onListenerHealthChanged") {
+      healthObserver?.let { UpiListenerBridge.removeHealthObserver(it) }
+      healthObserver = null
     }
   }
 

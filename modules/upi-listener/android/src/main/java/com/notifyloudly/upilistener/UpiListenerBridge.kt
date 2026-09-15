@@ -6,6 +6,7 @@ object UpiListenerBridge {
   private val notificationObservers = mutableSetOf<(Map<String, Any>) -> Unit>()
   private val announcementObservers = mutableSetOf<(Map<String, Any>) -> Unit>()
   private val connectionObservers = mutableSetOf<(Boolean) -> Unit>()
+  private val healthObservers = mutableSetOf<(Map<String, Any>) -> Unit>()
   private val pending = ArrayDeque<Map<String, Any>>()
 
   @Synchronized
@@ -65,5 +66,25 @@ object UpiListenerBridge {
   @Synchronized
   fun emitConnection(connected: Boolean) {
     connectionObservers.toList().forEach { it(connected) }
+  }
+
+  @Synchronized
+  fun addHealthObserver(observer: (Map<String, Any>) -> Unit) {
+    healthObservers.add(observer)
+  }
+
+  @Synchronized
+  fun removeHealthObserver(observer: (Map<String, Any>) -> Unit) {
+    healthObservers.remove(observer)
+  }
+
+  @Synchronized
+  fun emitHealth(status: String, accessGranted: Boolean, connected: Boolean) {
+    val payload = mapOf<String, Any>(
+      "status" to status,
+      "accessGranted" to accessGranted,
+      "connected" to connected
+    )
+    healthObservers.toList().forEach { it(payload) }
   }
 }

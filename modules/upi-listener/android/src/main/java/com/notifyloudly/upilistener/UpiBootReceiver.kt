@@ -32,6 +32,11 @@ class UpiBootReceiver : BroadcastReceiver() {
     } catch (e: Exception) {
       Log.w(TAG, "tts restart failed: ${e.message}")
     }
+    try {
+      UpiHealthScheduler.ensureScheduled(context.applicationContext)
+    } catch (e: Exception) {
+      Log.w(TAG, "health check schedule failed: ${e.message}")
+    }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
       try {
         val component = ComponentName(context.applicationContext, UpiNotificationListenerService::class.java)

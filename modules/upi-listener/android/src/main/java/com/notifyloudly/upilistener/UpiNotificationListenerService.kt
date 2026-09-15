@@ -27,11 +27,15 @@ class UpiNotificationListenerService : NotificationListenerService() {
   override fun onListenerConnected() {
     isConnected = true
     UpiListenerBridge.emitConnection(true)
+    // Push the tri-state too — connection-only listeners can't tell
+    // "bound" apart from "grant revoked", and the worker only runs ~15min.
+    UpiListenerHealth.checkAndEmit(this)
   }
 
   override fun onListenerDisconnected() {
     isConnected = false
     UpiListenerBridge.emitConnection(false)
+    UpiListenerHealth.checkAndEmit(this)
     try {
       requestRebind(ComponentName(this, UpiNotificationListenerService::class.java))
     } catch (_: Exception) {

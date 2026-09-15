@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 8;
 
 export const MIGRATIONS: string[] = [
   `CREATE TABLE IF NOT EXISTS payments (
@@ -26,4 +26,15 @@ export const MIGRATIONS: string[] = [
    SELECT MAX(id) FROM payments GROUP BY dedup_key
  );`,
 `CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_dedup_key ON payments (dedup_key);`,
+// Phase 4: one row per contiguous down-stretch (connect/disconnect/revoke
+// history). ended_at NULL = still down. A single partial unique index
+// enforces at most one open episode without a separate lock table.
+`CREATE TABLE IF NOT EXISTS listening_episodes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  reason TEXT NOT NULL
+);`,
+`CREATE UNIQUE INDEX IF NOT EXISTS idx_listening_episodes_open ON listening_episodes (ended_at) WHERE ended_at IS NULL;`,
+`CREATE INDEX IF NOT EXISTS idx_listening_episodes_started_at ON listening_episodes (started_at DESC);`,
 ];
