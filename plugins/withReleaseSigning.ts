@@ -45,18 +45,33 @@ const withReleaseSigning: ConfigPlugin = (config) => {
     }
 
     // 2. Point buildTypes.release at signingConfigs.release (prebuild
-    // default is signingConfigs.debug). Scoped to the release block so the
-    // debug build type keeps its debug key. Idempotent.
-    const releaseTypeDebug = `        release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug`;
-    const releaseTypeRelease = `        release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.release`;
-    if (contents.includes(releaseTypeDebug)) {
-      contents = contents.replace(releaseTypeDebug, releaseTypeRelease);
+    // default is signingConfigs.debug). Hard-fail contract: no debug
+    // fallback — with MYAPP_UPLOAD_* absent the empty signingConfigs.release
+    // fails assembleRelease/bundleRelease at signing instead of silently
+    // shipping a debug-signed artifact. See docs/RELEASE_SIGNING.md.
+    //
+    // Line-scoped rewrite, not exact-string match: handles both the
+    // fresh-prebuild `signingConfig signingConfigs.debug` line and a stale
+    // ternary fallback line, without touching the debug build type's own key.
+    // Idempotent: once patched, the negative lookahead no longer matches.
+    const buildTypesIdx = contents.indexOf("buildTypes");
+    if (buildTypesIdx >= 0) {
+      const releaseIdx = contents.indexOf("release {", buildTypesIdx);
+      if (releaseIdx >= 0) {
+        const releaseEnd = contents.indexOf("\n        }", releaseIdx);
+        if (releaseEnd >= 0) {
+          const head = contents.slice(0, releaseIdx);
+          let body = contents.slice(releaseIdx, releaseEnd);
+          const tail = contents.slice(releaseEnd);
+          // Drop a stale sideload-fallback comment if present.
+          body = body.replace(/^[ \t]*\/\/ Local sideload[^\r\n]*\r?\n/m, "");
+          body = body.replace(
+            /^[ \t]*signingConfig[ \t]+(?!signingConfigs\.release\b).*$/m,
+            "            signingConfig signingConfigs.release",
+          );
+          contents = head + body + tail;
+        }
+      }
     }
 
     config.modResults.contents = contents;

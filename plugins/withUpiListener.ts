@@ -106,6 +106,12 @@ const withUpiListener: ConfigPlugin = (config) => {
     if (!application) {
       return config;
     }
+    // Privacy contract (docs/PRIVACY_POLICY.md: "no backup"): opt out of
+    // Google Auto Backup so the payments DB never leaves the device.
+    // Expo defaults this to true and exposes no app.json key, so this
+    // withAndroidManifest hook is the only seam. Idempotent overwrite.
+    application.$ = application.$ ?? {};
+    application.$["android:allowBackup"] = "false";
     const services = application.service ?? [];
     const hasService = (name: string) =>
       services.some((service) => service.$?.["android:name"] === name);

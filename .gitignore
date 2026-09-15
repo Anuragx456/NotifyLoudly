@@ -45,3 +45,7 @@ yarn-error.*
 # Nested native build outputs (generated via prebuild / gradle)
 **/android/build/
 **/.cxx/
+
+# Local IDE/agent hooks (machine-specific, not part of release)
+.codex/
+.cursor/
